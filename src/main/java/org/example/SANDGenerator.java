@@ -1,5 +1,7 @@
-package org.example;
-
+package org.generator;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
+import org.apache.poi.xwpf.usermodel.XWPFTable;
+import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -10,27 +12,27 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SANDGenerator {
-    private static final String TEMPLATE_FOLDER = "C:\\Users\\Admin\\IdeaProjects\\KSOTOOLS\\resources\\sample\\";
+    private static final String TEMPLATE_FOLDER = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\resources\\sample\\";
     // private static final String TEMPLATE_FOLDER = "C:\\Users\\Admin\\IdeaProjects\\KSOTOOLS\\resources\\template\\";
-    private static final String OUTPUT_FOLDER = "C:\\Users\\Admin\\IdeaProjects\\KSOTOOLS\\output\\";
+    private static final String OUTPUT_FOLDER = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\output\\";
     private static final String RGB_BLUE = "156, 194, 229";
 
     public static void main(String[] args) {
         List<File> cfgFiles = findCfgFiles(new File(TEMPLATE_FOLDER), new ArrayList<>());
-        String outputFileName = OUTPUT_FOLDER + "result.docx";
+        String outputFileName = OUTPUT_FOLDER + "datacapture.docx";
 
         for (File file : cfgFiles) {
             List<List<String>> tableData = extractTableData(file);
 
             String parentFolderName = file.getParentFile().getName();
-            String tableName = parentFolderName.substring(3).toUpperCase(); // Assumes prefix "pn_"
 
-            // generateWordDocument(tableData, outputFileName, tableName);
+            generateWordDocument(tableData, outputFileName, parentFolderName.toUpperCase());
         }
     }
 
@@ -70,28 +72,49 @@ public class SANDGenerator {
         boolean isRepeating = isRepeatingElement(element);
         String rgbColorLighter = getLighterColor(rgbColor);
 
+        System.out.println("-----------------------------------------");
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
-
-            if (node.getNodeType() == Node.ELEMENT_NODE) {
+            System.out.println("type: "+ node.getNodeType() + "  tagName : " + node.getNodeName());
+            if (node.getNodeType() == Node.ELEMENT_NODE){
                 Element childElement = (Element) node;
                 String tagName = childElement.getTagName();
-
-                if (tagName.equals("container") || tagName.equals("item")) {
-                    List<String> rowData = new ArrayList<>();
-                    rowData.add(formatLevel(level));
-                    rowData.add(isRepeating ? "Y" : "N");
-                    rowData.add(childElement.getAttribute("pathid"));
-                    rowData.add(getLabel(childElement));
-                    rowData.add(getDataType(childElement));
-                    rowData.add(isMandatory(childElement) ? "Y" : "N");
-                    rowData.add(""); // Description & Logic (empty for now)
-                    tableData.add(rowData);
-
-                    if (tagName.equals("container")) {
+                if (
+                        (tagName.equals("container") || tagName.equals("item") ||
+                                (
+                                        tagName.equals("tab") &&
+                                                !childElement.getAttribute("name").equals("Traditional Chinese") &&
+                                                !childElement.getAttribute("name").equals("Simplified Chinese")
+                                )
+                        )
+                ) {
+                    System.out.println("proceed \n tagName : "  + tagName +
+                            "  name: " + childElement.getAttribute("name") + ", " +
+                            "  pathid: " + childElement.getAttribute("pathid") + ", " +
+                            "  location: " + childElement.getAttribute("location") + ", " );
+                    if(!childElement.getAttribute("name").equals("dcr_content")){
+                        List<String> rowData = new ArrayList<>();
+                        rowData.add(formatLevel(level));
+                        rowData.add(isRepeating ? "Y" : "N");
+                        rowData.add(childElement.getAttribute("pathid"));
+                        rowData.add(getLabel(childElement));
+                        rowData.add(getDataType(childElement));
+                        rowData.add(isMandatory(childElement) ? "Y" : "N");
+                        rowData.add(""); // Description & Logic (empty for now)
+                        tableData.add(rowData);
+                    }
+                    if(tagName.equals("container") ||
+                            (
+                                    tagName.equals("tab") &&
+                                            !childElement.getAttribute("name").equals("Traditional Chinese")    &&
+                                            !childElement.getAttribute("name").equals("Simplified Chinese")
+                            )
+                    ){
                         processElement(childElement, tableData, level + 1, rgbColorLighter);
                     }
                 }
+            } else {
+                System.out.println("skipped");
             }
         }
     }
@@ -123,17 +146,21 @@ public class SANDGenerator {
         String tagName = element.getTagName();
         if (tagName.equals("container")) {
             return isRepeatingElement(element) ? "Container (Min = " + element.getAttribute("min") + ", Max = " + element.getAttribute("max") + ")" : "Container";
-        } else {
+        } else if(tagName.equals("item")){
             NodeList childNodes = element.getChildNodes();
             for (int i = 0; i < childNodes.getLength(); i++) {
                 Node node = childNodes.item(i);
-                if (node.getNodeType() == Node.ELEMENT_NODE) {
-                    String childTagName = node.getNodeName();
-                    if (childTagName.equals("text") || childTagName.equals("checkbox") || childTagName.equals("textarea") || childTagName.equals("browser")) {
-                        return "Text";
-                    }
+                if (node.getNodeType() == Node.ELEMENT_NODE && !node.getNodeName().equals("label")) {
+                    return node.getNodeName();
+//                    String childTagName = node.getNodeName();
+//                    if (childTagName.equals("text") || childTagName.equals("checkbox") || childTagName.equals("textarea") || childTagName.equals("browser")) {
+//                        return "Text";
+//                    }
                 }
             }
+        }
+        else{
+            return element.getTagName();
         }
         return "";
     }
@@ -167,8 +194,43 @@ public class SANDGenerator {
         return r + ", " + g + ", " + b;
     }
 
-    //TODO - generate xml to word table
     private static void generateWordDocument(List<List<String>> tableData, String outputFileName, String tableName) {
+        try (XWPFDocument document = new XWPFDocument()) {
+            if (!new File(outputFileName).exists()) {
+                document.createParagraph().createRun().setText(tableName); // Add table name as header
+            }
 
+            // Create a table
+            XWPFTable table = document.createTable();
+
+            // Header Row
+            XWPFTableRow headerRow = table.getRow(0);
+            headerRow.getCell(0).setText("Level");
+            headerRow.addNewTableCell().setText("Repeating");
+            headerRow.addNewTableCell().setText("Path ID");
+            headerRow.addNewTableCell().setText("Label");
+            headerRow.addNewTableCell().setText("Data Type");
+            headerRow.addNewTableCell().setText("Mandatory");
+            headerRow.addNewTableCell().setText("Description & Logic");
+
+            // Data Rows
+            for (List<String> rowData : tableData) {
+                XWPFTableRow row = table.createRow();
+                int cellIndex = 0; // Start at the first cell
+                for (String cellData : rowData) {
+                    row.getCell(cellIndex).setText(cellData);
+                    cellIndex++; // Increment the index after setting the cell text
+                }
+            }
+
+
+            // Save the document
+            try (FileOutputStream out = new FileOutputStream(outputFileName, true)) {
+                document.write(out);
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
