@@ -2,7 +2,6 @@ package org.generator;
 
 import org.apache.commons.compress.utils.Sets;
 import org.apache.poi.xwpf.usermodel.*;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STTblWidth;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -20,8 +19,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
-import java.util.*;
 import java.util.List;
+import java.util.*;
 
 /**
  * The `SANDGenerator` class is responsible for generating a Word document based
@@ -40,6 +39,7 @@ public class SANDGenerator {
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
     static final Set<String> availableElementTags = Sets.newHashSet("container", "item");
+    static final Set<String> unAvailableXpaths = Sets.newHashSet("isReplicate");
 
     public static void main(String[] args) {
         loadConfiguration();
@@ -166,24 +166,22 @@ public class SANDGenerator {
                     "  pathid: " + childElement.getAttribute("pathid") + ", " +
                     "  location: " + childElement.getAttribute("location") + ", ");
 
-            if (!childElement.getAttribute("name").equals("dcr_content")) {
-                List<String> rowData = new ArrayList<>();
+            List<String> rowData = new ArrayList<>();
 
-                orderExcludeSkipped++;
-                String childOrder = parentHierarchy + (orderExcludeSkipped);
-                rowData.add(childOrder);
-                rowData.add(isRepeating ? "Y" : "N");
-                rowData.add(xPath);
-                rowData.add(getLabel(childElement));
-                rowData.add(dateType);
-                rowData.add(isMandatory(childElement) ? "Y" : "N");
-                rowData.add(""); // Description & Logic (empty for now)
-                tableData.add(rowData);
+            orderExcludeSkipped++;
+            String childOrder = parentHierarchy + (orderExcludeSkipped);
+            rowData.add(childOrder);
+            rowData.add(isRepeating ? "Y" : "N");
+            rowData.add(xPath);
+            rowData.add(getLabel(childElement));
+            rowData.add(dateType);
+            rowData.add(isMandatory(childElement) ? "Y" : "N");
+            rowData.add(""); // Description & Logic (empty for now)
+            tableData.add(rowData);
 
-                // Recursive call for containers only
-                if (tagName.equals("container")) {
-                    processElement(childElement, tableData, xPath, childOrder);
-                }
+            // Recursive call for containers only
+            if (tagName.equals("container")) {
+                processElement(childElement, tableData, xPath, childOrder);
             }
         }
     }
@@ -195,7 +193,10 @@ public class SANDGenerator {
      * @return
      */
     private static boolean isValidElements(Node node) {
-        return isValidNodeType(node) && isAvailablElementTags(node) && isHidden(node);
+        return isValidNodeType(node) &&
+                isAvailableElementTags(node) &&
+                isAvailableXPath(node) &&
+                isHidden(node);
     }
 
     /**
@@ -219,7 +220,7 @@ public class SANDGenerator {
      * @param node
      * @return
      */
-    private static boolean isAvailablElementTags(Node node) {
+    private static boolean isAvailableElementTags(Node node) {
         boolean isValid = true;
         try {
             String tagName = ((Element) node).getTagName();
@@ -227,6 +228,30 @@ public class SANDGenerator {
                 System.out.println("skipped - NOT container|item");
                 isValid = false;
             }
+        } catch (ClassCastException e) {
+            e.printStackTrace();
+            isValid = false;
+        }
+        return isValid;
+    }
+
+    /**
+     * Check if the xPath is available
+     * 
+     * @param node
+     * @return
+     */
+    private static boolean isAvailableXPath(Node node) {
+        boolean isValid = true;
+        try {
+            Element childElement = (Element) node;
+            String xPath = childElement.getAttribute("name");
+
+            // Check if any item in unAvailableXpaths is present in xPath
+            if (unAvailableXpaths.stream().anyMatch(e-> xPath.contains(e))) {
+                isValid = false;
+            }
+
         } catch (ClassCastException e) {
             e.printStackTrace();
             isValid = false;
@@ -385,6 +410,7 @@ public class SANDGenerator {
      * @param table
      */
     private static void renderHeaderRow(XWPFTable table) {
+        int[] columnWidths = { 2, 3, 28, 28, 12, 3, 24 };
         XWPFTableRow headerRow = table.getRow(0);
         headerRow.getCell(0).setText("Level");
         headerRow.addNewTableCell().setText("Repeating");
@@ -393,25 +419,22 @@ public class SANDGenerator {
         headerRow.addNewTableCell().setText("Data Type");
         headerRow.addNewTableCell().setText("Mandatory");
         headerRow.addNewTableCell().setText("Description & Logic");
+        int idx = 0;
         for (XWPFTableCell cell : headerRow.getTableCells()) {
             cell.getCTTc().addNewTcPr().addNewShd().setFill("0070C0"); // Set background color
+            cell.setWidth(columnWidths[idx] + "%");
             XWPFParagraph paragraph = cell.getParagraphs().get(0);
-            if (paragraph != null) {
-                if (paragraph.getCTP() != null && paragraph.getCTP().getPPr() != null) {
-                    CTFonts fonts = paragraph.getCTP().getPPr().addNewRPr().addNewRFonts();
-                    fonts.setAscii("Calibri Body");
-                    fonts.setHAnsi("Calibri Body");
-                    fonts.setCs("Calibri Body");
-                }
-            }
             assert paragraph != null;
+            paragraph.setWordWrapped(true);
             for (XWPFRun run : paragraph.getRuns()) {
                 run.setFontSize(8);
+                run.setBold(true);
+                run.setFontFamily("Calibri");
                 if (run.getCTR() != null && run.getCTR().getRPr() != null) {
                     run.getCTR().getRPr().addNewColor().setVal("FFFFFF");
-                    run.setBold(true);
                 }
             }
+            idx++;
         }
     }
 
@@ -429,8 +452,10 @@ public class SANDGenerator {
                 XWPFTableCell cell = row.getCell(cellIndex);
                 cell.setText(cellData);
                 for (XWPFParagraph paragraph : cell.getParagraphs()) {
+                    paragraph.setWordWrapped(true); // Add this line
                     for (XWPFRun run : paragraph.getRuns()) {
                         run.setFontSize(8);
+                        run.setFontFamily("Calibri");
                     }
                 }
 
@@ -471,7 +496,6 @@ public class SANDGenerator {
                 List<List<String>> tableDataForTab = tabEntry.getValue();
                 XWPFTable table = document.createTable();
                 table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
-
                 renderHeaderRow(table);
 
                 renderContentRow(table, tableDataForTab);
