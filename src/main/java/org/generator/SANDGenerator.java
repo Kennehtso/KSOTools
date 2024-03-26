@@ -1,5 +1,6 @@
 package org.generator;
 
+import org.apache.commons.compress.utils.Sets;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
@@ -29,7 +30,7 @@ public class SANDGenerator {
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
-
+    static final Set<String> availablElementTags = Sets.newHashSet("container", "item");
     public static void main(String[] args) {
         loadConfiguration();
 
@@ -96,7 +97,7 @@ public class SANDGenerator {
 
                 // Process elements within this tab only:
 
-                processElement(tabElement, tableDataForTab, "", RGB_BLUE);
+                processElement(tabElement, tableDataForTab, "","", RGB_BLUE);
             }
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
@@ -105,38 +106,29 @@ public class SANDGenerator {
         // return tableData;
     }
 
-    private static void processElement(Element element, List<List<String>> tableData, String parentHierarchy, String rgbColor) {
+    private static void processElement(Element element, List<List<String>> tableData, String parentXPath, String parentHierarchy, String rgbColor) {
         NodeList childNodes = element.getChildNodes();
         boolean isRepeating = isRepeatingElement(element);
         String rgbColorLighter = getLighterColor(rgbColor);
-        if (!parentHierarchy.isEmpty())
-            parentHierarchy += ".";
+        if (!parentHierarchy.isEmpty()) parentHierarchy += ".";
+        if (!parentXPath.isEmpty()) parentXPath += "/";
 
         System.out.println("-----------------------------------------");
         int orderExcludeSkipped = 0;
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
             System.out.println("type: " + node.getNodeType() + "  tagName : " + node.getNodeName());
-            if (node.getNodeType() != Node.ELEMENT_NODE){
-                System.out.println("skipped - NOT ELEMENT_NODE");
+
+            if(!isValidElements(node))
                 continue;
-            }
 
             Element childElement = (Element) node;
             String tagName = childElement.getTagName();
-            if ((!tagName.equals("container") && !tagName.equals("item"))) {
-                System.out.println("skipped - NOT container|item");
-                continue;
-            }
-
             String dateType = getDataType(childElement);
-            if (dateType.equals("hidden")) {
-                System.out.println("skipped - node is hidden");
-                continue;
-            }
+            String xPath = parentXPath + childElement.getAttribute("name");
 
-            System.out.println("proceed \n tagName : " + tagName +
-                    "  name: " + childElement.getAttribute("name") + ", " +
+            System.out.println("proceed \n"+
+                    "  name: " + xPath + ", " +
                     "  pathid: " + childElement.getAttribute("pathid") + ", " +
                     "  location: " + childElement.getAttribute("location") + ", ");
             // Calculate formatted level with parent information
@@ -147,7 +139,7 @@ public class SANDGenerator {
                 String childOrder = parentHierarchy + (orderExcludeSkipped);
                 rowData.add(childOrder);
                 rowData.add(isRepeating ? "Y" : "N");
-                rowData.add(childElement.getAttribute("name"));
+                rowData.add(xPath);
                 rowData.add(getLabel(childElement));
                 rowData.add(dateType);
                 rowData.add(isMandatory(childElement) ? "Y" : "N");
@@ -157,10 +149,49 @@ public class SANDGenerator {
 
                 // Recursive call for containers only
                 if (tagName.equals("container")) {
-                    processElement(childElement, tableData, childOrder,  rgbColorLighter);
+                    processElement(childElement, tableData, xPath, childOrder, rgbColorLighter);
                 }
             }
         }
+    }
+    private static boolean isValidElements(Node node){
+        return isValidNodeType(node) && isAvailablElementTags(node) && isHidden(node);
+    }
+    private static boolean isValidNodeType(Node node){
+        boolean isValid = true;
+        if (node.getNodeType() != Node.ELEMENT_NODE){
+            System.out.println("skipped - NOT ELEMENT_NODE");
+            isValid = false;
+        }
+        return isValid;
+    }
+    private static boolean isAvailablElementTags(Node node){
+        boolean isValid = true;
+        try {
+            String tagName = ((Element) node).getTagName();
+            if (!availablElementTags.contains(tagName)) {
+                System.out.println("skipped - NOT container|item");
+                isValid = false;
+            }
+        } catch (ClassCastException e) {
+            e.printStackTrace();
+            isValid = false;
+        }
+        return isValid;
+    }
+    private static boolean isHidden(Node node){
+        boolean isValid = true;
+        try {
+            String dateType = getDataType((Element) node);
+            if (dateType.equals("hidden")) {
+                System.out.println("skipped - node is hidden");
+                isValid = false;
+            }
+        } catch (ClassCastException e) {
+            e.printStackTrace();
+            isValid = false;
+        }
+        return isValid;
     }
 
     private static String formatLevel(int level) {
