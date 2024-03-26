@@ -159,7 +159,7 @@ public class SANDGenerator {
             Element childElement = (Element) node;
             String tagName = childElement.getTagName();
             String dateType = getDataType(childElement);
-            String xPath = parentXPath + childElement.getAttribute("name");
+            String xPath = parentXPath + childElement.getAttribute(tagName.equals("item")? "pathid" : "name");
 
             System.out.println("proceed \n" +
                     "  name: " + xPath + ", " +
@@ -245,10 +245,11 @@ public class SANDGenerator {
         boolean isValid = true;
         try {
             Element childElement = (Element) node;
-            String xPath = childElement.getAttribute("name");
+            String tagName = ((Element) node).getTagName();
+            String xPath = childElement.getAttribute(tagName.equals("item")? "pathid" : "name");
 
-            // Check if any item in unAvailableXpaths is present in xPath
-            if (unAvailableXpaths.stream().anyMatch(e-> xPath.contains(e))) {
+            // Check if any item in unAvailableXpath is present in xPath
+            if (unAvailableXpaths.stream().anyMatch(xPath::contains)) {
                 isValid = false;
             }
 
