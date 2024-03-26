@@ -1,5 +1,6 @@
 package org.generator;
 
+import org.apache.commons.io.FilenameUtils;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFTable;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
@@ -13,6 +14,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.text.MessageFormat;
@@ -20,18 +22,19 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class SANDGenerator {
-    private static final String TEMPLATE_FOLDER = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\resources\\sample\\";
-    // private static final String TEMPLATE_FOLDER =
-    // "C:\\Users\\Admin\\IdeaProjects\\KSOTOOLS\\resources\\template\\";
-    private static final String OUTPUT_FOLDER = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\output\\";
+
+    private static String templateFolder;
+    private static String outputFolder;
     private static final String RGB_BLUE = "156, 194, 229";
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
 
     public static void main(String[] args) {
-        List<File> cfgFiles = findCfgFiles(new File(TEMPLATE_FOLDER), new ArrayList<>());
-        String outputFileName = OUTPUT_FOLDER + MessageFormat.format("datacapture_{0}.docx",
+        loadConfiguration();
+
+        List<File> cfgFiles = findCfgFiles(new File(templateFolder), new ArrayList<>());
+        String outputFileName = outputFolder + MessageFormat.format("datacapture_{0}.docx",
                 new SimpleDateFormat(TIMESTAMP_FORMAT).format(new Date()));
 
         for (File file : cfgFiles) {
@@ -43,7 +46,22 @@ public class SANDGenerator {
             tabbedData.clear(); // Clear the tabbed data for the next file
         }
     }
-
+    private static void loadConfiguration() {
+        Properties config = new Properties();
+        try (FileInputStream inputStream = new FileInputStream("config/system.properties")) {
+            config.load(inputStream);
+            templateFolder = config.getProperty("template.folder");
+            outputFolder = config.getProperty("output.folder");
+            System.out.println("Current work space: " + System.getProperty("user.dir") );
+            System.out.println("templateFolder: " + templateFolder);
+            System.out.println("outputFolder: " + outputFolder);
+        } catch (IOException e) {
+            System.err.println("Error loading configuration file. Using default paths.");
+            // Use your original hardcoded paths as a fallback
+            templateFolder = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\resources\\sample\\";
+            outputFolder = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\output\\";
+        }
+    }
     private static List<File> findCfgFiles(File directory, List<File> cfgFiles) {
         File[] files = directory.listFiles();
         if (files != null) {
