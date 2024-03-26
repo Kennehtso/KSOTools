@@ -1,10 +1,9 @@
 package org.generator;
 
 import org.apache.commons.compress.utils.Sets;
-import org.apache.commons.io.FilenameUtils;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFTable;
-import org.apache.poi.xwpf.usermodel.XWPFTableRow;
+import org.apache.poi.xwpf.usermodel.*;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.STTblWidth;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -14,6 +13,7 @@ import org.xml.sax.SAXException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import java.awt.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.text.MessageFormat;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.List;
 
 public class SANDGenerator {
 
@@ -30,7 +31,7 @@ public class SANDGenerator {
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
-    static final Set<String> availablElementTags = Sets.newHashSet("container", "item");
+    static final Set<String> availableElementTags = Sets.newHashSet("container", "item");
     public static void main(String[] args) {
         loadConfiguration();
 
@@ -97,7 +98,7 @@ public class SANDGenerator {
 
                 // Process elements within this tab only:
 
-                processElement(tabElement, tableDataForTab, "","", RGB_BLUE);
+                processElement(tabElement, tableDataForTab, "","");
             }
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
@@ -106,18 +107,17 @@ public class SANDGenerator {
         // return tableData;
     }
 
-    private static void processElement(Element element, List<List<String>> tableData, String parentXPath, String parentHierarchy, String rgbColor) {
+    private static void processElement(Element element, List<List<String>> tableData, String parentXPath, String parentHierarchy) {
         NodeList childNodes = element.getChildNodes();
         boolean isRepeating = isRepeatingElement(element);
-        String rgbColorLighter = getLighterColor(rgbColor);
         if (!parentHierarchy.isEmpty()) parentHierarchy += ".";
         if (!parentXPath.isEmpty()) parentXPath += "/";
 
-        System.out.println("-----------------------------------------");
+        // System.out.println("-----------------------------------------");
         int orderExcludeSkipped = 0;
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
-            System.out.println("type: " + node.getNodeType() + "  tagName : " + node.getNodeName());
+            // System.out.println("type: " + node.getNodeType() + "  tagName : " + node.getNodeName());
 
             if(!isValidElements(node))
                 continue;
@@ -149,7 +149,7 @@ public class SANDGenerator {
 
                 // Recursive call for containers only
                 if (tagName.equals("container")) {
-                    processElement(childElement, tableData, xPath, childOrder, rgbColorLighter);
+                    processElement(childElement, tableData, xPath, childOrder);
                 }
             }
         }
@@ -169,7 +169,7 @@ public class SANDGenerator {
         boolean isValid = true;
         try {
             String tagName = ((Element) node).getTagName();
-            if (!availablElementTags.contains(tagName)) {
+            if (!availableElementTags.contains(tagName)) {
                 System.out.println("skipped - NOT container|item");
                 isValid = false;
             }
@@ -254,21 +254,91 @@ public class SANDGenerator {
         return false;
     }
 
-    private static String getLighterColor(String rgbColor) {
-        String[] components = rgbColor.split(", ");
+    // Calculate the depth of the level (e.g., "1.1.2" has depth 3)
+    private static int getLevelDepth(String level) {
+        return level.split("\\.").length;
+    }
+
+    private static String calculateLevelColor(int level) {
+        String[] components = RGB_BLUE.split(", ");
         int r = Integer.parseInt(components[0]);
         int g = Integer.parseInt(components[1]);
         int b = Integer.parseInt(components[2]);
 
-        r = Math.max(r - 20, 0);
-        g = Math.max(g - 20, 0);
-        b = Math.max(b - 20, 0);
+        Color color = new Color(r, g, b);
+        float[] hsv = Color.RGBtoHSB(r, g, b, null);
 
-        return r + ", " + g + ", " + b;
+        // Adjust value (brightness) based on level
+        float valueStep = 0.05f; // Adjust this for desired smoothness
+        float newValue = Math.max(hsv[2] - (level * valueStep), 0.0f);
+
+        Color newColor = Color.getHSBColor(hsv[0], hsv[1], newValue);
+
+        // Convert back to RGB and format as hex
+        return String.format("%02X%02X%02X", newColor.getRed(), newColor.getGreen(), newColor.getBlue());
     }
+    private static void renderHeaderRow(XWPFTable table)
+    {
+        XWPFTableRow headerRow = table.getRow(0);
+        headerRow.getCell(0).setText("Level");
+        headerRow.addNewTableCell().setText("Repeating");
+        headerRow.addNewTableCell().setText("Path ID");
+        headerRow.addNewTableCell().setText("Label");
+        headerRow.addNewTableCell().setText("Data Type");
+        headerRow.addNewTableCell().setText("Mandatory");
+        headerRow.addNewTableCell().setText("Description & Logic");
+        for (XWPFTableCell cell : headerRow.getTableCells()) {
+            cell.getCTTc().addNewTcPr().addNewShd().setFill("0070C0"); // Set background color
+            XWPFParagraph paragraph = cell.getParagraphs().get(0);
+            if (paragraph != null ) {
+                if(paragraph.getCTP() != null && paragraph.getCTP().getPPr()!= null){
+                    CTFonts fonts = paragraph.getCTP().getPPr().addNewRPr().addNewRFonts();
+                    fonts.setAscii("Calibri Body");
+                    fonts.setHAnsi("Calibri Body");
+                    fonts.setCs("Calibri Body");
+                }
+            }
+            assert paragraph != null;
+            for (XWPFRun run : paragraph.getRuns()) {
+                run.setFontSize(8);
+                if(run.getCTR() != null && run.getCTR().getRPr()!= null){
+                    run.getCTR().getRPr().addNewColor().setVal("FFFFFF");
+                    run.setBold(true);
+                } // Set font color to white
+            }
+        }
+    }
+    private static void renderContentRow(XWPFTable table, List<List<String>> tableDataForTab)
+    {
+        for (List<String> rowData : tableDataForTab)
+        {
+            XWPFTableRow row = table.createRow();
+            int cellIndex = 0;
+            for (String cellData : rowData) {
+                XWPFTableCell cell = row.getCell(cellIndex);
+                cell.setText(cellData);
+                for (XWPFParagraph paragraph : cell.getParagraphs()) {
+                    for (XWPFRun run : paragraph.getRuns()) {
+                        run.setFontSize(8);
+                    }
+                }
 
+                String hexColor = "";
+                int level = getLevelDepth(rowData.get(0));
+                if (rowData.get(4).contains("Container")) {
+                    hexColor = calculateLevelColor(level);
+                    cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
+                } else if (cellIndex == 1) {
+                    hexColor = calculateLevelColor(level-1);
+                    cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
+                }
+                cellIndex++;
+            }
+        }
+    }
     private static void generateWordDocument(Map<String, List<List<String>>> tabbedData, String outputFileName,
-            String tableName) {
+                                             String tableName)
+    {
         try (XWPFDocument document = new XWPFDocument()) {
             if (!new File(outputFileName).exists()) {
                 document.createParagraph().createRun().setText(tableName); // Add table name as header
@@ -282,25 +352,14 @@ public class SANDGenerator {
                 // Use a temporary variable name to avoid conflict
                 List<List<String>> tableDataForTab = tabEntry.getValue();
                 XWPFTable table = document.createTable();
+                table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
 
-                XWPFTableRow headerRow = table.getRow(0);
-                headerRow.getCell(0).setText("Level");
-                headerRow.addNewTableCell().setText("Repeating");
-                headerRow.addNewTableCell().setText("Path ID");
-                headerRow.addNewTableCell().setText("Label");
-                headerRow.addNewTableCell().setText("Data Type");
-                headerRow.addNewTableCell().setText("Mandatory");
-                headerRow.addNewTableCell().setText("Description & Logic");
+                // render Header Row
+                renderHeaderRow(table);
 
-                // Data Rows (use the temporary variable)
-                for (List<String> rowData : tableDataForTab) {
-                    XWPFTableRow row = table.createRow();
-                    int cellIndex = 0;
-                    for (String cellData : rowData) {
-                        row.getCell(cellIndex).setText(cellData);
-                        cellIndex++;
-                    }
-                }
+                // render Content Row
+                renderContentRow(table, tableDataForTab);
+
                 document.createParagraph(); // Add a separating empty line
             }
 
