@@ -58,8 +58,6 @@ public class SANDGenerator {
         } catch (IOException e) {
             System.err.println("Error loading configuration file. Using default paths.");
             // Use your original hardcoded paths as a fallback
-            templateFolder = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\resources\\sample\\";
-            outputFolder = "C:\\Users\\kenne\\Documents\\Coding\\KSO_JAVA\\KSOTools\\output\\";
         }
     }
     private static List<File> findCfgFiles(File directory, List<File> cfgFiles) {
@@ -97,7 +95,8 @@ public class SANDGenerator {
                 tabbedData.put(tabName, tableDataForTab);
 
                 // Process elements within this tab only:
-                processElement(tabElement, tableDataForTab, 1, RGB_BLUE);
+
+                processElement(tabElement, tableDataForTab, "", RGB_BLUE);
             }
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
@@ -106,41 +105,60 @@ public class SANDGenerator {
         // return tableData;
     }
 
-    private static void processElement(Element element, List<List<String>> tableData, int level, String rgbColor) {
+    private static void processElement(Element element, List<List<String>> tableData, String parentHierarchy, String rgbColor) {
         NodeList childNodes = element.getChildNodes();
         boolean isRepeating = isRepeatingElement(element);
         String rgbColorLighter = getLighterColor(rgbColor);
+        if (!parentHierarchy.isEmpty())
+            parentHierarchy += ".";
 
         System.out.println("-----------------------------------------");
+        int orderExcludeSkipped = 0;
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
             System.out.println("type: " + node.getNodeType() + "  tagName : " + node.getNodeName());
-            if (node.getNodeType() == Node.ELEMENT_NODE) {
-                Element childElement = (Element) node;
-                String tagName = childElement.getTagName();
-                if ((!tagName.equals("container") && !tagName.equals("item"))) {
-                    continue;
-                }
-                System.out.println("proceed \n tagName : " + tagName +
-                        "  name: " + childElement.getAttribute("name") + ", " +
-                        "  pathid: " + childElement.getAttribute("pathid") + ", " +
-                        "  location: " + childElement.getAttribute("location") + ", ");
-                if (!childElement.getAttribute("name").equals("dcr_content")) {
-                    List<String> rowData = new ArrayList<>();
-                    rowData.add(formatLevel(level));
-                    rowData.add(isRepeating ? "Y" : "N");
-                    rowData.add(childElement.getAttribute("name"));
-                    rowData.add(getLabel(childElement));
-                    rowData.add(getDataType(childElement));
-                    rowData.add(isMandatory(childElement) ? "Y" : "N");
-                    rowData.add(""); // Description & Logic (empty for now)
-                    tableData.add(rowData);
-                }
+            if (node.getNodeType() != Node.ELEMENT_NODE){
+                System.out.println("skipped - NOT ELEMENT_NODE");
+                continue;
+            }
+
+            Element childElement = (Element) node;
+            String tagName = childElement.getTagName();
+            if ((!tagName.equals("container") && !tagName.equals("item"))) {
+                System.out.println("skipped - NOT container|item");
+                continue;
+            }
+
+            String dateType = getDataType(childElement);
+            if (dateType.equals("hidden")) {
+                System.out.println("skipped - node is hidden");
+                continue;
+            }
+
+            System.out.println("proceed \n tagName : " + tagName +
+                    "  name: " + childElement.getAttribute("name") + ", " +
+                    "  pathid: " + childElement.getAttribute("pathid") + ", " +
+                    "  location: " + childElement.getAttribute("location") + ", ");
+            // Calculate formatted level with parent information
+            if (!childElement.getAttribute("name").equals("dcr_content")) {
+                List<String> rowData = new ArrayList<>();
+
+                orderExcludeSkipped ++;
+                String childOrder = parentHierarchy + (orderExcludeSkipped);
+                rowData.add(childOrder);
+                rowData.add(isRepeating ? "Y" : "N");
+                rowData.add(childElement.getAttribute("name"));
+                rowData.add(getLabel(childElement));
+                rowData.add(dateType);
+                rowData.add(isMandatory(childElement) ? "Y" : "N");
+                rowData.add(""); // Description & Logic (empty for now)
+                tableData.add(rowData);
+
+
+                // Recursive call for containers only
                 if (tagName.equals("container")) {
-                    processElement(childElement, tableData, level + 1, rgbColorLighter);
+                    processElement(childElement, tableData, childOrder,  rgbColorLighter);
                 }
-            } else {
-                System.out.println("skipped");
             }
         }
     }
@@ -155,6 +173,7 @@ public class SANDGenerator {
         }
         return sb.toString();
     }
+
 
     private static boolean isRepeatingElement(Element element) {
         return element.hasAttribute("min") || element.hasAttribute("max");
