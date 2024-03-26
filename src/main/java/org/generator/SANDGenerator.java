@@ -23,6 +23,14 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.List;
 
+/**
+ * The `SANDGenerator` class is responsible for generating a Word document based
+ * on the configuration files and extracting table data from XML files.
+ * It loads the configuration from a properties file, finds the configuration
+ * files in the template folder, and generates a Word document for each
+ * configuration file.
+ * The extracted table data is stored in a tabbed data structure.
+ */
 public class SANDGenerator {
 
     private static String templateFolder;
@@ -32,6 +40,7 @@ public class SANDGenerator {
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
     static final Set<String> availableElementTags = Sets.newHashSet("container", "item");
+
     public static void main(String[] args) {
         loadConfiguration();
 
@@ -41,27 +50,38 @@ public class SANDGenerator {
 
         for (File file : cfgFiles) {
             extractTableData(file);
-            tableData.clear(); // Clear tableData after processing each file
+            tableData.clear();
 
             String parentFolderName = file.getParentFile().getName().toUpperCase();
             generateWordDocument(tabbedData, outputFileName, parentFolderName);
-            tabbedData.clear(); // Clear the tabbed data for the next file
+            tabbedData.clear();
         }
     }
+
+    /**
+     * Load configuration from the properties file.
+     */
     private static void loadConfiguration() {
         Properties config = new Properties();
         try (FileInputStream inputStream = new FileInputStream("config/system.properties")) {
             config.load(inputStream);
             templateFolder = config.getProperty("template.folder");
             outputFolder = config.getProperty("output.folder");
-            System.out.println("Current work space: " + System.getProperty("user.dir") );
+            System.out.println("Current work space: " + System.getProperty("user.dir"));
             System.out.println("templateFolder: " + templateFolder);
             System.out.println("outputFolder: " + outputFolder);
         } catch (IOException e) {
             System.err.println("Error loading configuration file. Using default paths.");
-            // Use your original hardcoded paths as a fallback
         }
     }
+
+    /**
+     * Find all configuration files in the directory.
+     * 
+     * @param directory
+     * @param cfgFiles
+     * @return
+     */
     private static List<File> findCfgFiles(File directory, List<File> cfgFiles) {
         File[] files = directory.listFiles();
         if (files != null) {
@@ -76,6 +96,11 @@ public class SANDGenerator {
         return cfgFiles;
     }
 
+    /**
+     * Extract table data from the XML file.
+     * 
+     * @param file
+     */
     private static void extractTableData(File file) {
         List<List<String>> tableData = new ArrayList<>();
 
@@ -89,37 +114,46 @@ public class SANDGenerator {
                 Node tabNode = tabNodes.item(i);
                 Element tabElement = (Element) tabNode;
                 String tabName = tabElement.getAttribute("name");
+
                 // skip Traditional, Simplified Chinese
                 if (tabName.equals("Traditional Chinese") || tabName.equals("Simplified Chinese"))
                     continue;
+
                 // Initialize table data for the current tab
                 List<List<String>> tableDataForTab = new ArrayList<>();
                 tabbedData.put(tabName, tableDataForTab);
 
-                // Process elements within this tab only:
-
-                processElement(tabElement, tableDataForTab, "","");
+                processElement(tabElement, tableDataForTab, "", "");
             }
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
         }
-
-        // return tableData;
     }
 
-    private static void processElement(Element element, List<List<String>> tableData, String parentXPath, String parentHierarchy) {
+    /**
+     * Process the element and extract the table data.
+     * 
+     * @param element
+     * @param tableData
+     * @param parentXPath
+     * @param parentHierarchy
+     */
+    private static void processElement(Element element, List<List<String>> tableData, String parentXPath,
+            String parentHierarchy) {
         NodeList childNodes = element.getChildNodes();
         boolean isRepeating = isRepeatingElement(element);
-        if (!parentHierarchy.isEmpty()) parentHierarchy += ".";
-        if (!parentXPath.isEmpty()) parentXPath += "/";
+        if (!parentHierarchy.isEmpty())
+            parentHierarchy += ".";
+        if (!parentXPath.isEmpty())
+            parentXPath += "/";
 
         // System.out.println("-----------------------------------------");
         int orderExcludeSkipped = 0;
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
-            // System.out.println("type: " + node.getNodeType() + "  tagName : " + node.getNodeName());
 
-            if(!isValidElements(node))
+            // check if the node is valid
+            if (!isValidElements(node))
                 continue;
 
             Element childElement = (Element) node;
@@ -127,15 +161,15 @@ public class SANDGenerator {
             String dateType = getDataType(childElement);
             String xPath = parentXPath + childElement.getAttribute("name");
 
-            System.out.println("proceed \n"+
+            System.out.println("proceed \n" +
                     "  name: " + xPath + ", " +
                     "  pathid: " + childElement.getAttribute("pathid") + ", " +
                     "  location: " + childElement.getAttribute("location") + ", ");
-            // Calculate formatted level with parent information
+
             if (!childElement.getAttribute("name").equals("dcr_content")) {
                 List<String> rowData = new ArrayList<>();
 
-                orderExcludeSkipped ++;
+                orderExcludeSkipped++;
                 String childOrder = parentHierarchy + (orderExcludeSkipped);
                 rowData.add(childOrder);
                 rowData.add(isRepeating ? "Y" : "N");
@@ -146,7 +180,6 @@ public class SANDGenerator {
                 rowData.add(""); // Description & Logic (empty for now)
                 tableData.add(rowData);
 
-
                 // Recursive call for containers only
                 if (tagName.equals("container")) {
                     processElement(childElement, tableData, xPath, childOrder);
@@ -154,18 +187,39 @@ public class SANDGenerator {
             }
         }
     }
-    private static boolean isValidElements(Node node){
+
+    /**
+     * Check if the node is valid
+     * 
+     * @param node
+     * @return
+     */
+    private static boolean isValidElements(Node node) {
         return isValidNodeType(node) && isAvailablElementTags(node) && isHidden(node);
     }
-    private static boolean isValidNodeType(Node node){
+
+    /**
+     * Check if the node is a valid element type
+     * 
+     * @param node
+     * @return
+     */
+    private static boolean isValidNodeType(Node node) {
         boolean isValid = true;
-        if (node.getNodeType() != Node.ELEMENT_NODE){
+        if (node.getNodeType() != Node.ELEMENT_NODE) {
             System.out.println("skipped - NOT ELEMENT_NODE");
             isValid = false;
         }
         return isValid;
     }
-    private static boolean isAvailablElementTags(Node node){
+
+    /**
+     * Check if the node is a valid element tag
+     * 
+     * @param node
+     * @return
+     */
+    private static boolean isAvailablElementTags(Node node) {
         boolean isValid = true;
         try {
             String tagName = ((Element) node).getTagName();
@@ -179,7 +233,14 @@ public class SANDGenerator {
         }
         return isValid;
     }
-    private static boolean isHidden(Node node){
+
+    /**
+     * Check if the node is hidden
+     * 
+     * @param node
+     * @return
+     */
+    private static boolean isHidden(Node node) {
         boolean isValid = true;
         try {
             String dateType = getDataType((Element) node);
@@ -194,6 +255,12 @@ public class SANDGenerator {
         return isValid;
     }
 
+    /**
+     * Format the level
+     * 
+     * @param level
+     * @return
+     */
     private static String formatLevel(int level) {
         StringBuilder sb = new StringBuilder();
         int currentLevel = level;
@@ -205,11 +272,22 @@ public class SANDGenerator {
         return sb.toString();
     }
 
-
+    /**
+     * Check if the element is repeating
+     * 
+     * @param element
+     * @return
+     */
     private static boolean isRepeatingElement(Element element) {
         return element.hasAttribute("min") || element.hasAttribute("max");
     }
 
+    /**
+     * Get the label of the element
+     * 
+     * @param element
+     * @return
+     */
     private static String getLabel(Element element) {
         NodeList labelNodes = element.getElementsByTagName("label");
         if (labelNodes.getLength() > 0) {
@@ -218,6 +296,12 @@ public class SANDGenerator {
         return "";
     }
 
+    /**
+     * Get the data type of the element
+     * 
+     * @param element
+     * @return
+     */
     private static String getDataType(Element element) {
         String tagName = element.getTagName();
         if (tagName.equals("container")) {
@@ -238,6 +322,12 @@ public class SANDGenerator {
         return "";
     }
 
+    /**
+     * Check if the element is mandatory
+     * 
+     * @param element
+     * @return
+     */
     private static boolean isMandatory(Element element) {
         if (!element.getTagName().equals("item"))
             return false;
@@ -254,11 +344,22 @@ public class SANDGenerator {
         return false;
     }
 
-    // Calculate the depth of the level (e.g., "1.1.2" has depth 3)
+    /**
+     * Get the depth of the level
+     * 
+     * @param level
+     * @return
+     */
     private static int getLevelDepth(String level) {
         return level.split("\\.").length;
     }
 
+    /**
+     * Calculate the level color
+     * 
+     * @param level
+     * @return
+     */
     private static String calculateLevelColor(int level) {
         String[] components = RGB_BLUE.split(", ");
         int r = Integer.parseInt(components[0]);
@@ -277,8 +378,13 @@ public class SANDGenerator {
         // Convert back to RGB and format as hex
         return String.format("%02X%02X%02X", newColor.getRed(), newColor.getGreen(), newColor.getBlue());
     }
-    private static void renderHeaderRow(XWPFTable table)
-    {
+
+    /**
+     * Render the header row
+     * 
+     * @param table
+     */
+    private static void renderHeaderRow(XWPFTable table) {
         XWPFTableRow headerRow = table.getRow(0);
         headerRow.getCell(0).setText("Level");
         headerRow.addNewTableCell().setText("Repeating");
@@ -290,8 +396,8 @@ public class SANDGenerator {
         for (XWPFTableCell cell : headerRow.getTableCells()) {
             cell.getCTTc().addNewTcPr().addNewShd().setFill("0070C0"); // Set background color
             XWPFParagraph paragraph = cell.getParagraphs().get(0);
-            if (paragraph != null ) {
-                if(paragraph.getCTP() != null && paragraph.getCTP().getPPr()!= null){
+            if (paragraph != null) {
+                if (paragraph.getCTP() != null && paragraph.getCTP().getPPr() != null) {
                     CTFonts fonts = paragraph.getCTP().getPPr().addNewRPr().addNewRFonts();
                     fonts.setAscii("Calibri Body");
                     fonts.setHAnsi("Calibri Body");
@@ -301,17 +407,22 @@ public class SANDGenerator {
             assert paragraph != null;
             for (XWPFRun run : paragraph.getRuns()) {
                 run.setFontSize(8);
-                if(run.getCTR() != null && run.getCTR().getRPr()!= null){
+                if (run.getCTR() != null && run.getCTR().getRPr() != null) {
                     run.getCTR().getRPr().addNewColor().setVal("FFFFFF");
                     run.setBold(true);
-                } // Set font color to white
+                }
             }
         }
     }
-    private static void renderContentRow(XWPFTable table, List<List<String>> tableDataForTab)
-    {
-        for (List<String> rowData : tableDataForTab)
-        {
+
+    /**
+     * Render the content row
+     * 
+     * @param table
+     * @param tableDataForTab
+     */
+    private static void renderContentRow(XWPFTable table, List<List<String>> tableDataForTab) {
+        for (List<String> rowData : tableDataForTab) {
             XWPFTableRow row = table.createRow();
             int cellIndex = 0;
             for (String cellData : rowData) {
@@ -329,16 +440,23 @@ public class SANDGenerator {
                     hexColor = calculateLevelColor(level);
                     cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
                 } else if (cellIndex == 1) {
-                    hexColor = calculateLevelColor(level-1);
+                    hexColor = calculateLevelColor(level - 1);
                     cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
                 }
                 cellIndex++;
             }
         }
     }
+
+    /**
+     * Generate the Word document
+     * 
+     * @param tabbedData
+     * @param outputFileName
+     * @param tableName
+     */
     private static void generateWordDocument(Map<String, List<List<String>>> tabbedData, String outputFileName,
-                                             String tableName)
-    {
+            String tableName) {
         try (XWPFDocument document = new XWPFDocument()) {
             if (!new File(outputFileName).exists()) {
                 document.createParagraph().createRun().setText(tableName); // Add table name as header
@@ -354,10 +472,8 @@ public class SANDGenerator {
                 XWPFTable table = document.createTable();
                 table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
 
-                // render Header Row
                 renderHeaderRow(table);
 
-                // render Content Row
                 renderContentRow(table, tableDataForTab);
 
                 document.createParagraph(); // Add a separating empty line
