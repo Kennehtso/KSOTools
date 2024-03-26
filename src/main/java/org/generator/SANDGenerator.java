@@ -158,8 +158,8 @@ public class SANDGenerator {
 
             Element childElement = (Element) node;
             String tagName = childElement.getTagName();
-            String dateType = getDataType(childElement);
-            String xPath = parentXPath + childElement.getAttribute(tagName.equals("item")? "pathid" : "name");
+            String dataType = getDataType(childElement);
+            String xPath = parentXPath + childElement.getAttribute(tagName.equals("item") ? "pathid" : "name");
 
             System.out.println("proceed \n" +
                     "  name: " + xPath + ", " +
@@ -168,16 +168,18 @@ public class SANDGenerator {
 
             List<String> rowData = new ArrayList<>();
 
-            orderExcludeSkipped++;
             String childOrder = parentHierarchy + (orderExcludeSkipped);
+            String hasBG = isRepeatingElement(element) ? "hasBG" : "noBG";
             rowData.add(childOrder);
-            rowData.add(isRepeating ? "Y" : "N");
+            rowData.add((isRepeatingElement(childElement) ? "Y" : "N") + "|" + hasBG);
             rowData.add(xPath);
             rowData.add(getLabel(childElement));
-            rowData.add(dateType);
+            rowData.add(dataType);
             rowData.add(isMandatory(childElement) ? "Y" : "N");
             rowData.add(""); // Description & Logic (empty for now)
             tableData.add(rowData);
+
+            orderExcludeSkipped++;
 
             // Recursive call for containers only
             if (tagName.equals("container")) {
@@ -246,7 +248,7 @@ public class SANDGenerator {
         try {
             Element childElement = (Element) node;
             String tagName = ((Element) node).getTagName();
-            String xPath = childElement.getAttribute(tagName.equals("item")? "pathid" : "name");
+            String xPath = childElement.getAttribute(tagName.equals("item") ? "pathid" : "name");
 
             // Check if any item in unAvailableXpath is present in xPath
             if (unAvailableXpaths.stream().anyMatch(xPath::contains)) {
@@ -451,26 +453,50 @@ public class SANDGenerator {
             int cellIndex = 0;
             for (String cellData : rowData) {
                 XWPFTableCell cell = row.getCell(cellIndex);
-                cell.setText(cellData);
-                for (XWPFParagraph paragraph : cell.getParagraphs()) {
-                    paragraph.setWordWrapped(true); // Add this line
-                    for (XWPFRun run : paragraph.getRuns()) {
-                        run.setFontSize(8);
-                        run.setFontFamily("Calibri");
-                    }
-                }
-
-                String hexColor = "";
                 int level = getLevelDepth(rowData.get(0));
-                if (rowData.get(4).contains("Container")) {
-                    hexColor = calculateLevelColor(level);
-                    cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
-                } else if (cellIndex == 1) {
-                    hexColor = calculateLevelColor(level - 1);
-                    cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
-                }
+
+                setContentCellText(rowData, cellData, cellIndex, cell);
+
+                setContentCellBGColor(rowData, cellData, level, cell, cellIndex);
+
+                setContentCellFont(cell);
+
                 cellIndex++;
             }
+        }
+    }
+
+    private static void setContentCellFont(XWPFTableCell cell) {
+        for (XWPFParagraph paragraph : cell.getParagraphs()) {
+            paragraph.setWordWrapped(true); // Add this line
+            for (XWPFRun run : paragraph.getRuns()) {
+                run.setFontSize(8);
+                run.setFontFamily("Calibri");
+            }
+        }
+    }
+
+    private static void setContentCellText(List<String> rowData, String cellData, int cellIndex, XWPFTableCell cell) {
+        if (cellIndex == 1) {
+            String[] cellDataSplit = cellData.split("\\|");
+            if (rowData.get(4).contains("Container")) {
+                cell.setText(cellDataSplit[0]);
+            } else {
+                cell.setText(cellData.contains("hasBG") ? "" : cellDataSplit[0] );
+            }
+        } else{
+            cell.setText(cellData);
+        }
+    }
+
+    private static void setContentCellBGColor(List<String> rowData, String cellData, int level, XWPFTableCell cell, int cellIndex) {
+        String hexColor;
+        if (rowData.get(4).contains("Container")) {
+            hexColor = calculateLevelColor(level);
+            cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
+        } else if (cellIndex == 1 && cellData.contains("hasBG")) {
+            hexColor = calculateLevelColor(level - 1);
+            cell.getCTTc().addNewTcPr().addNewShd().setFill(hexColor);
         }
     }
 
