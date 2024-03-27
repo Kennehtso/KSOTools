@@ -39,6 +39,7 @@ public class SANDGenerator {
     private static final String RGB_BLUE = "156, 194, 229";
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
+    private static List<File> cfgFiles; // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
     static final Set<String> availableElementTags = Sets.newHashSet("container", "item");
     static final Set<String> unAvailableXpaths = Sets.newHashSet("isReplicate");
@@ -46,18 +47,21 @@ public class SANDGenerator {
     public static void main(String[] args) {
         loadConfiguration();
 
-        List<File> cfgFiles = findFilesByExtension(new File(templateFolder), new ArrayList<>(), "cfg");
-        List<File> componentFiles = findFilesByExtension(new File(componentFolder), new ArrayList<>(), "xml");
+        cfgFiles = findFilesByExtension(new File(templateFolder), new ArrayList<>(), "cfg");
+        // List<File> componentFiles = findFilesByExtension(new File(componentFolder),
+        // new ArrayList<>(), "xml");
         String outputFileName = outputFolder + MessageFormat.format("datacapture_{0}.docx",
                 new SimpleDateFormat(TIMESTAMP_FORMAT).format(new Date()));
-
-        for (File file : cfgFiles) {
-            extractTableData(file, componentFiles);
+        int index = 0;
+        while (index < cfgFiles.size()) {
+            extractTableData(cfgFiles.get(index));
             tableData.clear();
 
-            String parentFolderName = file.getParentFile().getName().toUpperCase();
+            String parentFolderName = cfgFiles.get(index).getParentFile().getName().toUpperCase();
             generateWordDocument(tabbedData, outputFileName, parentFolderName);
             tabbedData.clear();
+
+            index++;
         }
     }
 
@@ -110,14 +114,13 @@ public class SANDGenerator {
      * 
      * @param file
      */
-    private static void extractTableData(File file, List<File> componentFiles) {
+    private static void extractTableData(File file) {
         List<List<String>> tableData = new ArrayList<>();
 
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document document = builder.parse(file);
-
             NodeList tabNodes = document.getElementsByTagName("tab");
             for (int i = 0; i < tabNodes.getLength(); i++) {
                 Node tabNode = tabNodes.item(i);
@@ -131,12 +134,36 @@ public class SANDGenerator {
                 // Initialize table data for the current tab
                 List<List<String>> tableDataForTab = new ArrayList<>();
                 tabbedData.put(tabName, tableDataForTab);
-
                 processElement(tabElement, tableDataForTab, "", "");
+            }
+
+            NodeList inlineNodes = document.getElementsByTagName("inline");
+            for (int i = 0; i < inlineNodes.getLength(); i++) {
+                Node inlineNode = inlineNodes.item(i);
+                Element inlineElement = (Element) inlineNode;
+                String inlineCommand = inlineElement.getAttribute("command");
+
+                // if not data_comps.ipl or /templatedata, skip
+                if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
+                    continue;
+
+                String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
+                String componentPath = componentFolder + componentFile;
+                Document componentDocument = builder.parse(new File(componentPath));
+
+                NodeList substitutionNodes = componentDocument.getElementsByTagName("substitution");
+                Node substitutionNode = substitutionNodes.item(0);
+                Element substitutionElement = (Element) substitutionNode;
+
+                // Initialize table data for the current Inline
+                List<List<String>> tableDataForInline = new ArrayList<>();
+                tabbedData.put(componentFile.substring(0, componentFile.indexOf(".")), tableDataForInline);
+                processElement(substitutionElement, tableDataForInline, "", "");
             }
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
         }
+
     }
 
     /**
@@ -333,6 +360,12 @@ public class SANDGenerator {
         return "";
     }
 
+    /**
+     * Get the first result
+     * 
+     * @param node
+     * @return
+     */
     private static String getFirstResult(Node node) {
         System.out.println("getFirstResult");
         Element parentElement = (Element) node; // radio, text, checkbox
@@ -365,6 +398,12 @@ public class SANDGenerator {
         return node.getNodeName();
     }
 
+    /**
+     * Combine all the results
+     * 
+     * @param node
+     * @return
+     */
     private static String combineAllResult(Node node) {
         System.out.println("combineAllResult");
         StringBuilder result = new StringBuilder("Options: |");
@@ -385,6 +424,12 @@ public class SANDGenerator {
         return result.toString();
     }
 
+    /**
+     * Get the data type of the element
+     * 
+     * @param node
+     * @return
+     */
     private static String getDataTypeBy(Node node) {
         System.out.println("node.getNodeName() : " + node.getNodeName());
         switch (node.getNodeName()) {
@@ -543,6 +588,11 @@ public class SANDGenerator {
         }
     }
 
+    /**
+     * Set the font of the content cell
+     * 
+     * @param cell
+     */
     private static void setContentCellFont(XWPFTableCell cell) {
         for (XWPFParagraph paragraph : cell.getParagraphs()) {
             paragraph.setWordWrapped(true);
@@ -553,6 +603,14 @@ public class SANDGenerator {
         }
     }
 
+    /**
+     * Set the text of the content cell
+     * 
+     * @param rowData
+     * @param cellData
+     * @param cellIndex
+     * @param cell
+     */
     private static void setContentCellText(List<String> rowData, String cellData, int cellIndex, XWPFTableCell cell) {
         if (cellIndex == 1) {
             String[] cellDataSplit = cellData.split("\\|");
@@ -574,6 +632,15 @@ public class SANDGenerator {
         }
     }
 
+    /**
+     * Set the background color of the content cell
+     * 
+     * @param rowData
+     * @param cellData
+     * @param level
+     * @param cell
+     * @param cellIndex
+     */
     private static void setContentCellBGColor(List<String> rowData, String cellData, int level, XWPFTableCell cell,
             int cellIndex) {
         String hexColor;
