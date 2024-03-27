@@ -157,7 +157,7 @@ public class SANDGenerator {
             parentXPath += "/";
 
         // System.out.println("-----------------------------------------");
-        int orderExcludeSkipped = 0;
+        int orderExcludeSkipped = 1;
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
 
