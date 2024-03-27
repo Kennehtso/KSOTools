@@ -72,7 +72,7 @@ public class SANDGenerator {
                 mode = "test.";
             templateFolder = config.getProperty(mode + "template.folder");
             componentFolder = config.getProperty(mode + "template.component.folder");
-            outputFolder = config.getProperty("output" + mode + ".folder");
+            outputFolder = config.getProperty(mode + "output.folder");
 
             System.out.println("Current work space: " + System.getProperty("user.dir"));
             System.out.println("Current mode: " + config.getProperty("mode"));
@@ -333,6 +333,73 @@ public class SANDGenerator {
         return "";
     }
 
+    private static String getFirstResult(Node node) {
+        System.out.println("getFirstResult");
+        Element parentElement = (Element) node; // radio, text, checkbox
+        NodeList innerChildNodes = parentElement.getChildNodes();
+        for (int j = 0; j < innerChildNodes.getLength(); j++) {
+            Node innerNode = innerChildNodes.item(j);
+            if (innerNode.getNodeType() == Node.ELEMENT_NODE) {
+                Element innerElement = (Element) innerNode; // options, cgi-callout, checkbox
+                System.out.println("innerNode.getNodeName() : " + innerNode.getNodeName());
+                System.out.println("innerElement.getAttribute(\"label\") : " + innerElement.getAttribute("label"));
+                System.out.println("innerElement.getAttribute(\"url\") : " + innerElement.getAttribute("url"));
+                if ((innerNode.getNodeName().equals("cgi-callout") || innerNode.getNodeName().equals("callout"))) {
+                    if (innerElement.getAttribute("url").contains("landsd_html_editor"))
+                        return "Html Editor";
+                    else if (innerElement.getAttribute("label").contains("calendar")
+                            || innerElement.getAttribute("url").contains("calendar"))
+                        return "Date Picker";
+                    else if (innerElement.getAttribute("label").contains("Upload Document")
+                            || innerElement.getAttribute("url").contains("uploaddoc"))
+                        return "Document Uploader";
+                    else if (innerElement.getAttribute("label").contains("Upload Image")
+                            || innerElement.getAttribute("url").contains("uploadimage"))
+                        return "Image Uploader";
+                    else if (innerElement.getAttribute("url").contains("Import multiple images from OTMM")
+                            || innerElement.getAttribute("url").contains("otmm_import_multiple_image"))
+                        return "OTMM Image Importer";
+                }
+            }
+        }
+        return node.getNodeName();
+    }
+
+    private static String combineAllResult(Node node) {
+        System.out.println("combineAllResult");
+        StringBuilder result = new StringBuilder("Options: |");
+        Element parentElement = (Element) node; // radio, text, checkbox
+        NodeList innerChildNodes = parentElement.getChildNodes();
+        for (int j = 0; j < innerChildNodes.getLength(); j++) {
+            Node innerNode = innerChildNodes.item(j);
+            if (innerNode.getNodeType() == Node.ELEMENT_NODE) {
+                Element innerElement = (Element) innerNode; // options, cgi-callout, checkbox
+                System.out.println("innerNode.getNodeName() : " + innerNode.getNodeName());
+                System.out.println("innerElement.getAttribute(\"label\") : " + innerElement.getAttribute("label"));
+                System.out.println("innerElement.getAttribute(\"url\") : " + innerElement.getAttribute("url"));
+                if (innerNode.getNodeName().equals("option")) {
+                    result.append("- ").append(innerElement.getAttribute("label")).append("|");
+                }
+            }
+        }
+        return result.toString();
+    }
+
+    private static String getDataTypeBy(Node node) {
+        System.out.println("node.getNodeName() : " + node.getNodeName());
+        switch (node.getNodeName()) {
+            case "text":
+            case "textarea":
+            case "browser":
+                return getFirstResult(node);
+            case "checkbox":
+            case "select":
+            case "radio":
+                return node.getNodeName() + "|" + combineAllResult(node);
+        }
+        return node.getNodeName();
+    }
+
     /**
      * Get the data type of the element
      * 
@@ -349,8 +416,9 @@ public class SANDGenerator {
             NodeList childNodes = element.getChildNodes();
             for (int i = 0; i < childNodes.getLength(); i++) {
                 Node node = childNodes.item(i);
-                if (node.getNodeType() == Node.ELEMENT_NODE && !node.getNodeName().equals("label")) {
-                    return node.getNodeName();
+                if (node.getNodeType() == Node.ELEMENT_NODE && !node.getNodeName().equals("label")
+                        && !node.getNodeName().equals("description")) {
+                    return getDataTypeBy(node);
                 }
             }
         } else {
@@ -477,7 +545,7 @@ public class SANDGenerator {
 
     private static void setContentCellFont(XWPFTableCell cell) {
         for (XWPFParagraph paragraph : cell.getParagraphs()) {
-            paragraph.setWordWrapped(true); // Add this line
+            paragraph.setWordWrapped(true);
             for (XWPFRun run : paragraph.getRuns()) {
                 run.setFontSize(8);
                 run.setFontFamily("Calibri");
@@ -491,14 +559,23 @@ public class SANDGenerator {
             if (rowData.get(4).contains("Container")) {
                 cell.setText(cellDataSplit[0]);
             } else {
-                cell.setText(cellData.contains("hasBG") ? "" : cellDataSplit[0] );
+                cell.setText(cellData.contains("hasBG") ? "" : cellDataSplit[0]);
             }
-        } else{
+        } else if (cellIndex == 4) {
+            XWPFParagraph para = cell.getParagraphs().get(0);
+            String[] cellDataSplit = cellData.split("\\|");
+            for (String text : cellDataSplit) {
+                XWPFRun run = para.createRun();
+                run.setText(text.trim());
+                run.addBreak();
+            }
+        } else {
             cell.setText(cellData);
         }
     }
 
-    private static void setContentCellBGColor(List<String> rowData, String cellData, int level, XWPFTableCell cell, int cellIndex) {
+    private static void setContentCellBGColor(List<String> rowData, String cellData, int level, XWPFTableCell cell,
+            int cellIndex) {
         String hexColor;
         if (rowData.get(4).contains("Container")) {
             hexColor = calculateLevelColor(level);
@@ -527,11 +604,11 @@ public class SANDGenerator {
             for (Map.Entry<String, List<List<String>>> tabEntry : tabbedData.entrySet()) {
                 // Create tab header
                 document.createParagraph().createRun().setText(tabEntry.getKey());
-
                 // Use a temporary variable name to avoid conflict
                 List<List<String>> tableDataForTab = tabEntry.getValue();
                 XWPFTable table = document.createTable();
                 table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
+
                 renderHeaderRow(table);
 
                 renderContentRow(table, tableDataForTab);

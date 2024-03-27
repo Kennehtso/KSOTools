@@ -36,3 +36,9 @@ build/
 
 ### Mac OS ###
 .DS_Store
+*.docx
+*.cfg
+*.xsl
+*.xml
+config/system.properties
+config/system.properties
