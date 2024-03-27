@@ -32,8 +32,10 @@ import java.util.*;
  */
 public class SANDGenerator {
 
-    private static String templateFolder;
-    private static String outputFolder;
+    private static String mode = "";
+    private static String templateFolder = "";
+    private static String componentFolder = "";
+    private static String outputFolder = "";
     private static final String RGB_BLUE = "156, 194, 229";
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
@@ -44,12 +46,13 @@ public class SANDGenerator {
     public static void main(String[] args) {
         loadConfiguration();
 
-        List<File> cfgFiles = findCfgFiles(new File(templateFolder), new ArrayList<>());
+        List<File> cfgFiles = findFilesByExtension(new File(templateFolder), new ArrayList<>(), "cfg");
+        List<File> componentFiles = findFilesByExtension(new File(componentFolder), new ArrayList<>(), "xml");
         String outputFileName = outputFolder + MessageFormat.format("datacapture_{0}.docx",
                 new SimpleDateFormat(TIMESTAMP_FORMAT).format(new Date()));
 
         for (File file : cfgFiles) {
-            extractTableData(file);
+            extractTableData(file, componentFiles);
             tableData.clear();
 
             String parentFolderName = file.getParentFile().getName().toUpperCase();
@@ -65,10 +68,16 @@ public class SANDGenerator {
         Properties config = new Properties();
         try (FileInputStream inputStream = new FileInputStream("config/system.properties")) {
             config.load(inputStream);
-            templateFolder = config.getProperty("template.folder");
-            outputFolder = config.getProperty("output.folder");
+            if (config.getProperty("mode").equalsIgnoreCase("test"))
+                mode = "test.";
+            templateFolder = config.getProperty(mode + "template.folder");
+            componentFolder = config.getProperty(mode + "template.component.folder");
+            outputFolder = config.getProperty("output" + mode + ".folder");
+
             System.out.println("Current work space: " + System.getProperty("user.dir"));
+            System.out.println("Current mode: " + config.getProperty("mode"));
             System.out.println("templateFolder: " + templateFolder);
+            System.out.println("componentFolder: " + componentFolder);
             System.out.println("outputFolder: " + outputFolder);
         } catch (IOException e) {
             System.err.println("Error loading configuration file. Using default paths.");
@@ -79,21 +88,21 @@ public class SANDGenerator {
      * Find all configuration files in the directory.
      * 
      * @param directory
-     * @param cfgFiles
+     * @param targetFiles
      * @return
      */
-    private static List<File> findCfgFiles(File directory, List<File> cfgFiles) {
+    private static List<File> findFilesByExtension(File directory, List<File> targetFiles, String ext) {
         File[] files = directory.listFiles();
         if (files != null) {
             for (File file : files) {
                 if (file.isDirectory()) {
-                    findCfgFiles(file, cfgFiles);
-                } else if (file.getName().endsWith(".cfg")) {
-                    cfgFiles.add(file);
+                    findFilesByExtension(file, targetFiles, ext);
+                } else if (file.getName().endsWith("." + ext)) {
+                    targetFiles.add(file);
                 }
             }
         }
-        return cfgFiles;
+        return targetFiles;
     }
 
     /**
@@ -101,7 +110,7 @@ public class SANDGenerator {
      * 
      * @param file
      */
-    private static void extractTableData(File file) {
+    private static void extractTableData(File file, List<File> componentFiles) {
         List<List<String>> tableData = new ArrayList<>();
 
         try {
