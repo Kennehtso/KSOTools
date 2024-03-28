@@ -36,12 +36,15 @@ public class SANDGenerator {
     private static String templateFolder = "";
     private static String componentFolder = "";
     private static String outputFolder = "";
+    private static String fontFamily = "Calibri";
+    private static int fontSize = 8;
     private static final String RGB_BLUE = "156, 194, 229";
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     private static List<File> cfgFiles; // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
     static final Set<String> availableElementTags = Sets.newHashSet("container", "item", "inline");
+    static final Set<String> componentStartWithTag = Sets.newHashSet("system_tab", "common_tab");
     static final Set<String> unAvailableXpaths = Sets.newHashSet("isReplicate");
 
     public static void main(String[] args) {
@@ -56,20 +59,39 @@ public class SANDGenerator {
         XWPFDocument document = new XWPFDocument(); // Create a single document
 
         int index = 0;
+        int successCnt = 0;
+        int failCount = 0;
+        StringBuilder successFiles = new StringBuilder();
+        StringBuilder failFiles = new StringBuilder();
 
         while (index < cfgFiles.size()) {
-            extractTableData(cfgFiles.get(index));
-            System.out.println("*** Extracted data for file: " + cfgFiles.get(index).getName());
+            // System.out.println("--- Start Handing : " + cfgFiles.get(index).getAbsolutePath());
+            boolean collectSuccess = collectRepresentativeElements(cfgFiles.get(index));
+            // System.out.println("*** Extracted data for file: " + (collectSuccess ? "success" : "fail"));
             tableData.clear();
 
             String parentFolderName = cfgFiles.get(index).getParentFile().getName().toUpperCase();
-            generateWordDocument(document, tabbedData, parentFolderName);
-            System.out.println("*** Word document generated for file: " + cfgFiles.get(index).getName()); // Logging
-
+            boolean generateSuccess = generateWordDocument(document, tabbedData, parentFolderName);
+            // System.out.println("*** Word document generated for file: " + (generateSuccess ? "success" : "fail"));
             tabbedData.clear();
 
+            // System.out.println("--- End Handing ");
+            if(collectSuccess && generateSuccess){
+                successCnt++;
+                successFiles.append("\n").append(successCnt).append(" : ").append(cfgFiles.get(index).getAbsolutePath());
+            }
+            else{
+                failCount++;
+                failFiles.append("\n").append(failCount).append(" : ").append(cfgFiles.get(index).getAbsolutePath());
+            }
             index++;
         }
+        System.out.println("Handled cfg files count: '" + index + "', Success count: '" + successCnt + "', Fail count: '" + failCount+"'");
+        System.out.println("Success files: ");
+        System.out.println(successFiles.length() > 0 ? successFiles: "-- Not available -- ");
+        System.out.println();
+        System.out.println("Fail files: ");
+        System.out.println(failFiles.length() > 0 ? failFiles: "-- Not available -- ");
 
         try (FileOutputStream out = new FileOutputStream(outputFileName)) {
             document.write(out);
@@ -91,12 +113,16 @@ public class SANDGenerator {
             templateFolder = config.getProperty(mode + "template.folder");
             componentFolder = config.getProperty(mode + "template.component.folder");
             outputFolder = config.getProperty(mode + "output.folder");
+            fontSize = Integer.parseInt(config.getProperty("font.size"));
+            fontFamily = config.getProperty("font.family");
 
             System.out.println("Current work space: " + System.getProperty("user.dir"));
             System.out.println("Current mode: " + config.getProperty("mode"));
             System.out.println("templateFolder: " + templateFolder);
             System.out.println("componentFolder: " + componentFolder);
             System.out.println("outputFolder: " + outputFolder);
+            System.out.println("fontFamily: " + fontFamily);
+            System.out.println("fontSize: " + fontSize);
         } catch (IOException e) {
             System.err.println("Error loading configuration file. Using default paths.");
         }
@@ -128,67 +154,61 @@ public class SANDGenerator {
      * 
      * @param file
      */
-    private static void extractTableData(File file) {
-
+    private static boolean collectRepresentativeElements(File file) {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document document = builder.parse(file);
 
-            // processElement for "Tab" nodes
-            NodeList tabNodes = document.getElementsByTagName("tab");
-            for (int i = 0; i < tabNodes.getLength(); i++) {
-                Node tabNode = tabNodes.item(i);
-                Element tabElement = (Element) tabNode;
-                String tabName = tabElement.getAttribute("name");
-
-                // skip Traditional, Simplified Chinese
-                if (tabName.equals("Traditional Chinese") || tabName.equals("Simplified Chinese"))
-                    continue;
-
-                // Initialize table data for the current tab
-                List<List<String>> tableDataForTab = new ArrayList<>();
-                tabbedData.put(tabName, tableDataForTab);
-                processElement(tabElement, tableDataForTab, "", "");
-            }
-
-            // processElement for "inline" nodes that "wrap" with "tab"
-            NodeList inlineNodes = document.getElementsByTagName("inline");
-            for (int i = 0; i < inlineNodes.getLength(); i++) {
-                Node inlineNode = inlineNodes.item(i);
-                Element inlineElement = (Element) inlineNode;
-                String inlineCommand = inlineElement.getAttribute("command");
-
-                // if not including component file, skipped
-                if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
-                    continue;
-
-                // if not the following component, skipped
-                String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
-                if (!componentFile.equals("system_tab.xml") && !componentFile.equals("common_tab.xml"))
-                    continue;
-
-                String componentPath = componentFolder + componentFile;
-                extractTableData(new File(componentPath));
-
-                // Document componentDocument = builder.parse(new File(componentPath));
-                //
-                // NodeList substitutionNodes =
-                // componentDocument.getElementsByTagName("substitution");
-                // Node substitutionNode = substitutionNodes.item(0);
-                // Element substitutionElement = (Element) substitutionNode;
-                //
-                // // Initialize table data for the current Inline
-                // List<List<String>> tableDataForInline = new ArrayList<>();
-                // tabbedData.put(componentFile.substring(0, componentFile.indexOf(".")),
-                // tableDataForInline);
-                // processElement(substitutionElement, tableDataForInline, "", "");
-            }
+            processTabNodes(document);
+            processInlineNodes(document);
 
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
+            return false;
         }
+        return true;
+    }
 
+    private static void processTabNodes(Document document) {
+        NodeList tabNodes = document.getElementsByTagName("tab");
+        for (int i = 0; i < tabNodes.getLength(); i++) {
+            Node tabNode = tabNodes.item(i);
+            Element tabElement = (Element) tabNode;
+            String tabName = tabElement.getAttribute("name");
+
+            // skip Traditional, Simplified Chinese
+            if (tabName.equals("Traditional Chinese") || tabName.equals("Simplified Chinese"))
+                continue;
+
+            // Initialize table data for the current tab
+            List<List<String>> tableDataForTab = new ArrayList<>();
+            tabbedData.put(tabName, tableDataForTab);
+            addRowTableData(tabElement, tableDataForTab, "", "");
+        }
+    }
+
+    private static void processInlineNodes(Document document) {
+        NodeList inlineNodes = document.getElementsByTagName("inline");
+        for (int i = 0; i < inlineNodes.getLength(); i++) {
+            Node inlineNode = inlineNodes.item(i);
+            Element inlineElement = (Element) inlineNode;
+            String inlineCommand = inlineElement.getAttribute("command");
+
+            // if not including component file, skipped
+            if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
+                continue;
+
+            // if not the following component, skipped
+            String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
+            String componentName = componentFile.substring(0, componentFile.lastIndexOf("."));
+            if (!componentStartWithTag.contains(componentName)) {
+                continue;
+            }
+
+            String componentPath = componentFolder + componentFile;
+            collectRepresentativeElements(new File(componentPath));
+        }
     }
 
     /**
@@ -197,9 +217,9 @@ public class SANDGenerator {
      * @param element
      * @param tableData
      * @param parentXPath
-     * @param parentHierarchy
+     * 
      */
-    private static void processElement(Element element, List<List<String>> tableData, String parentXPath,
+    private static void addRowTableData(Element element, List<List<String>> tableData, String parentXPath,
             String parentHierarchy) {
         NodeList childNodes = element.getChildNodes();
         if (!parentHierarchy.isEmpty() && !parentHierarchy.endsWith("."))
@@ -207,7 +227,8 @@ public class SANDGenerator {
         if (!parentXPath.isEmpty() && !parentXPath.endsWith("/"))
             parentXPath += "/";
 
-        // System.out.println("-----------------------------------------");
+        if (mode.equals("test"))
+            System.out.println("-----------------------------------------");
         int orderExcludeSkipped = 1;
         for (int i = 0; i < childNodes.getLength(); i++) {
             Node node = childNodes.item(i);
@@ -218,7 +239,8 @@ public class SANDGenerator {
 
             Element childElement = (Element) node;
             String tagName = childElement.getTagName();
-            System.out.println("tagName : " + tagName);
+            if (mode.equals("test"))
+                System.out.println("tagName : " + tagName);
             // inline actions
             if (tagName.equals("inline")) {
                 try {
@@ -247,10 +269,12 @@ public class SANDGenerator {
 
                         Element substitutionChildElement = (Element) substitutionChildNode;
                         String substitutionChildTagName = substitutionChildElement.getTagName();
-                        System.out.println("substitutionChildTagName : " + substitutionChildTagName);
+                        if (mode.equals("test"))
+                            System.out.println("substitutionChildTagName : " + substitutionChildTagName);
 
                         String substitutionChildDataType = getDataType(substitutionChildElement);
-                        String xPath = parentXPath + substitutionChildElement.getAttribute(substitutionChildTagName.equals("item") ? "pathid" : "name");
+                        String xPath = parentXPath + substitutionChildElement
+                                .getAttribute(substitutionChildTagName.equals("item") ? "pathid" : "name");
 
                         List<String> rowData = new ArrayList<>();
 
@@ -269,7 +293,7 @@ public class SANDGenerator {
 
                         // Recursive call for containers only
                         if (substitutionChildTagName.equals("container")) {
-                            processElement(substitutionChildElement, tableData, xPath, childOrder);
+                            addRowTableData(substitutionChildElement, tableData, xPath, childOrder);
                         }
                     }
                     // processElement(substitutionElement, tableData, parentXPath, parentHierarchy);
@@ -299,7 +323,7 @@ public class SANDGenerator {
 
                 // Recursive call for containers only
                 if (tagName.equals("container")) {
-                    processElement(childElement, tableData, xPath, childOrder);
+                    addRowTableData(childElement, tableData, xPath, childOrder);
                 }
             }
         }
@@ -327,7 +351,7 @@ public class SANDGenerator {
     private static boolean isValidNodeType(Node node) {
         boolean isValid = true;
         if (node.getNodeType() != Node.ELEMENT_NODE) {
-            // System.out.println("skipped - NOT ELEMENT_NODE");
+            // if(mode.equals("test")) System.out.println("skipped - NOT ELEMENT_NODE");
             isValid = false;
         }
         return isValid;
@@ -344,7 +368,8 @@ public class SANDGenerator {
         try {
             String tagName = ((Element) node).getTagName();
             if (!availableElementTags.contains(tagName)) {
-                // System.out.println("skipped - NOT container|item|inline");
+                // if(mode.equals("test")) System.out.println("skipped - NOT
+                // container|item|inline");
                 isValid = false;
             }
         } catch (ClassCastException e) {
@@ -390,7 +415,7 @@ public class SANDGenerator {
         try {
             String dateType = getDataType((Element) node);
             if (dateType.equals("hidden")) {
-                // System.out.println("skipped - node is hidden");
+                // if(mode.equals("test")) System.out.println("skipped - node is hidden");
                 isValid = false;
             }
         } catch (ClassCastException e) {
@@ -448,16 +473,19 @@ public class SANDGenerator {
      * @return
      */
     private static String getFirstResult(Node node) {
-        // System.out.println("getFirstResult");
+        // if(mode.equals("test")) System.out.println("getFirstResult");
         Element parentElement = (Element) node; // radio, text, checkbox
         NodeList innerChildNodes = parentElement.getChildNodes();
         for (int j = 0; j < innerChildNodes.getLength(); j++) {
             Node innerNode = innerChildNodes.item(j);
             if (innerNode.getNodeType() == Node.ELEMENT_NODE) {
                 Element innerElement = (Element) innerNode; // options, cgi-callout, checkbox
-                // System.out.println("innerNode.getNodeName() : " + innerNode.getNodeName());
+                // if(mode.equals("test")) System.out.println("innerNode.getNodeName() : " +
+                // innerNode.getNodeName());
+                // if(mode.equals("test"))
                 // System.out.println("innerElement.getAttribute(\"label\") : " +
                 // innerElement.getAttribute("label"));
+                // if(mode.equals("test"))
                 // System.out.println("innerElement.getAttribute(\"url\") : " +
                 // innerElement.getAttribute("url"));
                 if ((innerNode.getNodeName().equals("cgi-callout") || innerNode.getNodeName().equals("callout"))) {
@@ -488,7 +516,7 @@ public class SANDGenerator {
      * @return
      */
     private static String combineAllResult(Node node) {
-        // System.out.println("combineAllResult");
+        // if(mode.equals("test")) System.out.println("combineAllResult");
         StringBuilder result = new StringBuilder("Options: |");
         Element parentElement = (Element) node; // radio, text, checkbox
         NodeList innerChildNodes = parentElement.getChildNodes();
@@ -496,9 +524,12 @@ public class SANDGenerator {
             Node innerNode = innerChildNodes.item(j);
             if (innerNode.getNodeType() == Node.ELEMENT_NODE) {
                 Element innerElement = (Element) innerNode; // options, cgi-callout, checkbox
-                // System.out.println("innerNode.getNodeName() : " + innerNode.getNodeName());
+                // if(mode.equals("test")) System.out.println("innerNode.getNodeName() : " +
+                // innerNode.getNodeName());
+                // if(mode.equals("test"))
                 // System.out.println("innerElement.getAttribute(\"label\") : " +
                 // innerElement.getAttribute("label"));
+                // if(mode.equals("test"))
                 // System.out.println("innerElement.getAttribute(\"url\") : " +
                 // innerElement.getAttribute("url"));
                 if (innerNode.getNodeName().equals("option")) {
@@ -516,7 +547,7 @@ public class SANDGenerator {
      * @return
      */
     private static String getDataTypeBy(Node node) {
-        // System.out.println("node.getNodeName() : " + node.getNodeName());
+        // if(mode.equals("test")) ln("node.getNodeName() : " + node.getNodeName());
         switch (node.getNodeName()) {
             case "text":
             case "textarea":
@@ -637,9 +668,9 @@ public class SANDGenerator {
             assert paragraph != null;
             paragraph.setWordWrapped(true);
             for (XWPFRun run : paragraph.getRuns()) {
-                run.setFontSize(8);
+                run.setFontSize(fontSize);
                 run.setBold(true);
-                run.setFontFamily("Calibri");
+                run.setFontFamily(fontFamily);
                 if (run.getCTR() != null && run.getCTR().getRPr() != null) {
                     run.getCTR().getRPr().addNewColor().setVal("FFFFFF");
                 }
@@ -682,8 +713,8 @@ public class SANDGenerator {
         for (XWPFParagraph paragraph : cell.getParagraphs()) {
             paragraph.setWordWrapped(true);
             for (XWPFRun run : paragraph.getRuns()) {
-                run.setFontSize(8);
-                run.setFontFamily("Calibri");
+                run.setFontSize(fontSize);
+                run.setFontFamily(fontFamily);
             }
         }
     }
@@ -745,27 +776,34 @@ public class SANDGenerator {
      * @param tabbedData
      * @param tableName
      */
-    private static void generateWordDocument(XWPFDocument document, Map<String, List<List<String>>> tabbedData,
+    private static boolean generateWordDocument(XWPFDocument document, Map<String, List<List<String>>> tabbedData,
             String tableName) {
-        if (tableName != null) { // Add check for tableName
-            document.createParagraph().createRun().setText(tableName); // Add table name as header
+        try {
+            if (tableName != null) { // Add check for tableName
+                document.createParagraph().createRun().setText(tableName); // Add table name as header
+            }
+
+            // Create tabs with separate tables for each tab name
+            for (Map.Entry<String, List<List<String>>> tabEntry : tabbedData.entrySet()) {
+                // Create tab header
+                document.createParagraph().createRun().setText(tabEntry.getKey());
+
+                // Use a temporary variable name to avoid conflict
+                List<List<String>> tableDataForTab = tabEntry.getValue();
+                XWPFTable table = document.createTable();
+                table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
+
+                renderHeaderRow(table);
+
+                renderContentRow(table, tableDataForTab);
+
+                document.createParagraph();
+            }
+        } catch (Exception e) {
+            System.err.println("Error generating Word document." + e.getMessage());
+            return false;
         }
-
-        // Create tabs with separate tables for each tab name
-        for (Map.Entry<String, List<List<String>>> tabEntry : tabbedData.entrySet()) {
-            // Create tab header
-            document.createParagraph().createRun().setText(tabEntry.getKey());
-
-            // Use a temporary variable name to avoid conflict
-            List<List<String>> tableDataForTab = tabEntry.getValue();
-            XWPFTable table = document.createTable();
-            table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
-
-            renderHeaderRow(table);
-            renderContentRow(table, tableDataForTab);
-
-            document.createParagraph();
-        }
+        return true;
     }
 
 }
