@@ -41,7 +41,7 @@ public class SANDGenerator {
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
     private static List<File> cfgFiles; // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
-    static final Set<String> availableElementTags = Sets.newHashSet("container", "item");
+    static final Set<String> availableElementTags = Sets.newHashSet("container", "item", "inline");
     static final Set<String> unAvailableXpaths = Sets.newHashSet("isReplicate");
 
     public static void main(String[] args) {
@@ -129,12 +129,13 @@ public class SANDGenerator {
      * @param file
      */
     private static void extractTableData(File file) {
-        List<List<String>> tableData = new ArrayList<>();
 
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document document = builder.parse(file);
+
+            // processElement for "Tab" nodes
             NodeList tabNodes = document.getElementsByTagName("tab");
             for (int i = 0; i < tabNodes.getLength(); i++) {
                 Node tabNode = tabNodes.item(i);
@@ -151,29 +152,39 @@ public class SANDGenerator {
                 processElement(tabElement, tableDataForTab, "", "");
             }
 
+            // processElement for "inline" nodes that "wrap" with "tab"
             NodeList inlineNodes = document.getElementsByTagName("inline");
             for (int i = 0; i < inlineNodes.getLength(); i++) {
                 Node inlineNode = inlineNodes.item(i);
                 Element inlineElement = (Element) inlineNode;
                 String inlineCommand = inlineElement.getAttribute("command");
 
-                // if not data_comps.ipl or /templatedata, skip
+                // if not including component file, skipped
                 if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
                     continue;
 
+                // if not the following component, skipped
                 String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
+                if (!componentFile.equals("system_tab.xml") && !componentFile.equals("common_tab.xml"))
+                    continue;
+
                 String componentPath = componentFolder + componentFile;
-                Document componentDocument = builder.parse(new File(componentPath));
+                extractTableData(new File(componentPath));
 
-                NodeList substitutionNodes = componentDocument.getElementsByTagName("substitution");
-                Node substitutionNode = substitutionNodes.item(0);
-                Element substitutionElement = (Element) substitutionNode;
-
-                // Initialize table data for the current Inline
-                List<List<String>> tableDataForInline = new ArrayList<>();
-                tabbedData.put(componentFile.substring(0, componentFile.indexOf(".")), tableDataForInline);
-                processElement(substitutionElement, tableDataForInline, "", "");
+                // Document componentDocument = builder.parse(new File(componentPath));
+                //
+                // NodeList substitutionNodes =
+                // componentDocument.getElementsByTagName("substitution");
+                // Node substitutionNode = substitutionNodes.item(0);
+                // Element substitutionElement = (Element) substitutionNode;
+                //
+                // // Initialize table data for the current Inline
+                // List<List<String>> tableDataForInline = new ArrayList<>();
+                // tabbedData.put(componentFile.substring(0, componentFile.indexOf(".")),
+                // tableDataForInline);
+                // processElement(substitutionElement, tableDataForInline, "", "");
             }
+
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
         }
@@ -191,10 +202,9 @@ public class SANDGenerator {
     private static void processElement(Element element, List<List<String>> tableData, String parentXPath,
             String parentHierarchy) {
         NodeList childNodes = element.getChildNodes();
-        boolean isRepeating = isRepeatingElement(element);
-        if (!parentHierarchy.isEmpty())
+        if (!parentHierarchy.isEmpty() && !parentHierarchy.endsWith("."))
             parentHierarchy += ".";
-        if (!parentXPath.isEmpty())
+        if (!parentXPath.isEmpty() && !parentXPath.endsWith("/"))
             parentXPath += "/";
 
         // System.out.println("-----------------------------------------");
@@ -208,32 +218,89 @@ public class SANDGenerator {
 
             Element childElement = (Element) node;
             String tagName = childElement.getTagName();
-            String dataType = getDataType(childElement);
-            String xPath = parentXPath + childElement.getAttribute(tagName.equals("item") ? "pathid" : "name");
+            System.out.println("tagName : " + tagName);
+            // inline actions
+            if (tagName.equals("inline")) {
+                try {
+                    String inlineCommand = childElement.getAttribute("command");
 
-            // System.out.println("proceed \n" +
-            // " name: " + xPath + ", " +
-            // " pathid: " + childElement.getAttribute("pathid") + ", " +
-            // " location: " + childElement.getAttribute("location") + ", ");
+                    // if not data_comps.ipl or /templatedata, skip
+                    if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
+                        continue;
 
-            List<String> rowData = new ArrayList<>();
+                    String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
+                    String componentPath = componentFolder + componentFile;
 
-            String childOrder = parentHierarchy + (orderExcludeSkipped);
-            String hasBG = isRepeatingElement(element) ? "hasBG" : "noBG";
-            rowData.add(childOrder);
-            rowData.add((isRepeatingElement(childElement) ? "Y" : "N") + "|" + hasBG);
-            rowData.add(xPath);
-            rowData.add(getLabel(childElement));
-            rowData.add(dataType);
-            rowData.add(isMandatory(childElement) ? "Y" : "N");
-            rowData.add(""); // Description & Logic (empty for now)
-            tableData.add(rowData);
+                    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+                    DocumentBuilder builder = factory.newDocumentBuilder();
+                    Document componentDocument = builder.parse(new File(componentPath));
 
-            orderExcludeSkipped++;
+                    NodeList substitutionNodes = componentDocument.getElementsByTagName("substitution");
+                    Node substitutionNode = substitutionNodes.item(0);
+                    Element substitutionElement = (Element) substitutionNode;
+                    NodeList substitutionChildNodes = substitutionElement.getChildNodes();
 
-            // Recursive call for containers only
-            if (tagName.equals("container")) {
-                processElement(childElement, tableData, xPath, childOrder);
+                    for (int j = 0; j < substitutionChildNodes.getLength(); j++) {
+                        Node substitutionChildNode = substitutionChildNodes.item(j);
+                        if (!isValidElements(substitutionChildNode))
+                            continue;
+
+                        Element substitutionChildElement = (Element) substitutionChildNode;
+                        String substitutionChildTagName = substitutionChildElement.getTagName();
+                        System.out.println("substitutionChildTagName : " + substitutionChildTagName);
+
+                        String substitutionChildDataType = getDataType(substitutionChildElement);
+                        String xPath = parentXPath + substitutionChildElement.getAttribute(substitutionChildTagName.equals("item") ? "pathid" : "name");
+
+                        List<String> rowData = new ArrayList<>();
+
+                        String childOrder = parentHierarchy + (orderExcludeSkipped);
+                        orderExcludeSkipped++;
+
+                        String hasBG = isRepeatingElement(element) ? "hasBG" : "noBG";
+                        rowData.add(childOrder);
+                        rowData.add((isRepeatingElement(substitutionChildElement) ? "Y" : "N") + "|" + hasBG);
+                        rowData.add(xPath);
+                        rowData.add(getLabel(substitutionChildElement));
+                        rowData.add(substitutionChildDataType);
+                        rowData.add(isMandatory(substitutionChildElement) ? "Y" : "N");
+                        rowData.add(""); // Description & Logic (empty for now)
+                        tableData.add(rowData);
+
+                        // Recursive call for containers only
+                        if (substitutionChildTagName.equals("container")) {
+                            processElement(substitutionChildElement, tableData, xPath, childOrder);
+                        }
+                    }
+                    // processElement(substitutionElement, tableData, parentXPath, parentHierarchy);
+                } catch (ParserConfigurationException | SAXException | IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            // "container", "item" actions
+            else {
+                String dataType = getDataType(childElement);
+                String xPath = parentXPath + childElement.getAttribute(tagName.equals("item") ? "pathid" : "name");
+
+                List<String> rowData = new ArrayList<>();
+
+                String childOrder = parentHierarchy + (orderExcludeSkipped);
+                orderExcludeSkipped++;
+
+                String hasBG = isRepeatingElement(element) ? "hasBG" : "noBG";
+                rowData.add(childOrder);
+                rowData.add((isRepeatingElement(childElement) ? "Y" : "N") + "|" + hasBG);
+                rowData.add(xPath);
+                rowData.add(getLabel(childElement));
+                rowData.add(dataType);
+                rowData.add(isMandatory(childElement) ? "Y" : "N");
+                rowData.add(""); // Description & Logic (empty for now)
+                tableData.add(rowData);
+
+                // Recursive call for containers only
+                if (tagName.equals("container")) {
+                    processElement(childElement, tableData, xPath, childOrder);
+                }
             }
         }
     }
@@ -277,7 +344,7 @@ public class SANDGenerator {
         try {
             String tagName = ((Element) node).getTagName();
             if (!availableElementTags.contains(tagName)) {
-                // System.out.println("skipped - NOT container|item");
+                // System.out.println("skipped - NOT container|item|inline");
                 isValid = false;
             }
         } catch (ClassCastException e) {
