@@ -56,8 +56,12 @@ public class SANDGenerator {
         String outputFileName = outputFolder + MessageFormat.format("datacapture_{1}{0}.docx",
                 new SimpleDateFormat(TIMESTAMP_FORMAT).format(new Date()), mode);
 
-        XWPFDocument document = new XWPFDocument(); // Create a single document
-
+        XWPFDocument document = null;
+        try {
+            document = new XWPFDocument(new FileInputStream("template.docx"));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         int index = 0;
         int successCnt = 0;
         int failCount = 0;
@@ -95,8 +99,13 @@ public class SANDGenerator {
         System.out.println("    outputFolder: " + outputFolder);
         System.out.println();
         System.out.println("[SANDGenerator] Program End ... ");
-
-        try (FileOutputStream out = new FileOutputStream(outputFileName)) {
+        try {
+            File outputFile = new File(outputFileName);
+            if (!outputFile.exists()) {
+                outputFile.getParentFile().mkdirs();
+                outputFile.createNewFile();
+            }
+            FileOutputStream out = new FileOutputStream(outputFileName);
             document.write(out);
             document.close();
         } catch (IOException e) {
@@ -787,13 +796,20 @@ public class SANDGenerator {
             String tableName) {
         try {
             if (tableName != null) { // Add check for tableName
-                document.createParagraph().createRun().setText(tableName);
+                XWPFParagraph templatePara = document.createParagraph();
+                templatePara.setStyle("Heading2");
+                XWPFRun templateRun = templatePara.createRun();
+                templateRun.setText(tableName);
             }
 
             // Create tabs with separate tables for each tab name
             for (Map.Entry<String, List<List<String>>> tabEntry : tabbedData.entrySet()) {
                 // Create tab header
-                document.createParagraph().createRun().setText(tabEntry.getKey());
+                XWPFParagraph tabPara = document.createParagraph();
+                tabPara.setStyle("Heading3");
+                XWPFRun tabRun = tabPara.createRun();
+                String tabName = tabEntry.getKey().equalsIgnoreCase("English") ? "English, Traditional Chinese & Simplify Chinese" : tabEntry.getKey() + " Tab";
+                tabRun.setText(tabName);
 
                 // Use a temporary variable name to avoid conflict
                 List<List<String>> tableDataForTab = tabEntry.getValue();
