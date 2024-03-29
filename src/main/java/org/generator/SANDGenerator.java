@@ -53,8 +53,8 @@ public class SANDGenerator {
         cfgFiles = findFilesByExtension(new File(templateFolder), new ArrayList<>(), "cfg");
         // List<File> componentFiles = findFilesByExtension(new File(componentFolder),
         // new ArrayList<>(), "xml");
-        String outputFileName = outputFolder + MessageFormat.format("datacapture_{0}.docx",
-                new SimpleDateFormat(TIMESTAMP_FORMAT).format(new Date()));
+        String outputFileName = outputFolder + MessageFormat.format("datacapture_{1}{0}.docx",
+                new SimpleDateFormat(TIMESTAMP_FORMAT).format(new Date()), mode);
 
         XWPFDocument document = new XWPFDocument(); // Create a single document
 
@@ -78,20 +78,23 @@ public class SANDGenerator {
             // System.out.println("--- End Handing ");
             if(collectSuccess && generateSuccess){
                 successCnt++;
-                successFiles.append("\n").append(successCnt).append(" : ").append(cfgFiles.get(index).getAbsolutePath());
+                successFiles.append("   ").append(successCnt).append(" : ").append(cfgFiles.get(index).getAbsolutePath()).append("\n");
             }
             else{
                 failCount++;
-                failFiles.append("\n").append(failCount).append(" : ").append(cfgFiles.get(index).getAbsolutePath());
+                failFiles.append("   ").append(failCount).append(" : ").append(cfgFiles.get(index).getAbsolutePath()).append("\n");
             }
             index++;
         }
-        System.out.println("Handled cfg files count: '" + index + "', Success count: '" + successCnt + "', Fail count: '" + failCount+"'");
         System.out.println("Success files: ");
         System.out.println(successFiles.length() > 0 ? successFiles: "-- Not available -- ");
-        System.out.println();
         System.out.println("Fail files: ");
         System.out.println(failFiles.length() > 0 ? failFiles: "-- Not available -- ");
+        System.out.println();
+        System.out.println("TOTAL cfg files count: '" + index + "'\n    Success count: '" + successCnt + "'\n    Fail count: '" + failCount+"'");
+        System.out.println("    outputFolder: " + outputFolder);
+        System.out.println();
+        System.out.println("[SANDGenerator] Program End ... ");
 
         try (FileOutputStream out = new FileOutputStream(outputFileName)) {
             document.write(out);
@@ -106,31 +109,35 @@ public class SANDGenerator {
      */
     private static void loadConfiguration() {
         Properties config = new Properties();
-        try (FileInputStream inputStream = new FileInputStream("config/system.properties")) {
+        try (FileInputStream inputStream = new FileInputStream("config.properties")) {
             config.load(inputStream);
-            if (config.getProperty("mode").equalsIgnoreCase("test"))
-                mode = "test.";
-            templateFolder = config.getProperty(mode + "template.folder");
-            componentFolder = config.getProperty(mode + "template.component.folder");
-            outputFolder = config.getProperty(mode + "output.folder");
-            fontSize = Integer.parseInt(config.getProperty("font.size"));
-            fontFamily = config.getProperty("font.family");
-
-            System.out.println("Current work space: " + System.getProperty("user.dir"));
-            System.out.println("Current mode: " + config.getProperty("mode"));
-            System.out.println("templateFolder: " + templateFolder);
-            System.out.println("componentFolder: " + componentFolder);
-            System.out.println("outputFolder: " + outputFolder);
-            System.out.println("fontFamily: " + fontFamily);
-            System.out.println("fontSize: " + fontSize);
         } catch (IOException e) {
             System.err.println("Error loading configuration file. Using default paths.");
         }
+
+        if (config.getProperty("mode").equalsIgnoreCase("test"))
+            mode = "test.";
+        templateFolder = config.getProperty(mode + "template.folder");
+        componentFolder = config.getProperty(mode + "template.component.folder");
+        outputFolder = config.getProperty(mode + "output.folder");
+        fontSize = Integer.parseInt(config.getProperty("font.size"));
+        fontFamily = config.getProperty("font.family");
+
+        System.out.println("[SANDGenerator] Program Start ... ");
+        System.out.println("    Current work space: " + System.getProperty("user.dir"));
+        System.out.println("    Current mode: " + config.getProperty("mode"));
+        System.out.println("    templateFolder: " + templateFolder);
+        System.out.println("    componentFolder: " + componentFolder);
+        System.out.println("    outputFolder: " + outputFolder);
+        System.out.println("    fontFamily: " + fontFamily);
+        System.out.println("    fontSize: " + fontSize);
+        System.out.println(System.lineSeparator());
+
     }
 
     /**
      * Find all configuration files in the directory.
-     * 
+     *
      * @param directory
      * @param targetFiles
      * @return
@@ -151,7 +158,7 @@ public class SANDGenerator {
 
     /**
      * Extract table data from the XML file.
-     * 
+     *
      * @param file
      */
     private static boolean collectRepresentativeElements(File file) {
@@ -213,11 +220,11 @@ public class SANDGenerator {
 
     /**
      * Process the element and extract the table data.
-     * 
+     *
      * @param element
      * @param tableData
      * @param parentXPath
-     * 
+     *
      */
     private static void addRowTableData(Element element, List<List<String>> tableData, String parentXPath,
             String parentHierarchy) {
@@ -331,7 +338,7 @@ public class SANDGenerator {
 
     /**
      * Check if the node is valid
-     * 
+     *
      * @param node
      * @return
      */
@@ -344,7 +351,7 @@ public class SANDGenerator {
 
     /**
      * Check if the node is a valid element type
-     * 
+     *
      * @param node
      * @return
      */
@@ -359,7 +366,7 @@ public class SANDGenerator {
 
     /**
      * Check if the node is a valid element tag
-     * 
+     *
      * @param node
      * @return
      */
@@ -381,7 +388,7 @@ public class SANDGenerator {
 
     /**
      * Check if the xPath is available
-     * 
+     *
      * @param node
      * @return
      */
@@ -406,7 +413,7 @@ public class SANDGenerator {
 
     /**
      * Check if the node is hidden
-     * 
+     *
      * @param node
      * @return
      */
@@ -427,7 +434,7 @@ public class SANDGenerator {
 
     /**
      * Format the level
-     * 
+     *
      * @param level
      * @return
      */
@@ -444,7 +451,7 @@ public class SANDGenerator {
 
     /**
      * Check if the element is repeating
-     * 
+     *
      * @param element
      * @return
      */
@@ -454,7 +461,7 @@ public class SANDGenerator {
 
     /**
      * Get the label of the element
-     * 
+     *
      * @param element
      * @return
      */
@@ -468,7 +475,7 @@ public class SANDGenerator {
 
     /**
      * Get the first result
-     * 
+     *
      * @param node
      * @return
      */
@@ -511,7 +518,7 @@ public class SANDGenerator {
 
     /**
      * Combine all the results
-     * 
+     *
      * @param node
      * @return
      */
@@ -542,7 +549,7 @@ public class SANDGenerator {
 
     /**
      * Get the data type of the element
-     * 
+     *
      * @param node
      * @return
      */
@@ -563,7 +570,7 @@ public class SANDGenerator {
 
     /**
      * Get the data type of the element
-     * 
+     *
      * @param element
      * @return
      */
@@ -590,7 +597,7 @@ public class SANDGenerator {
 
     /**
      * Check if the element is mandatory
-     * 
+     *
      * @param element
      * @return
      */
@@ -612,7 +619,7 @@ public class SANDGenerator {
 
     /**
      * Get the depth of the level
-     * 
+     *
      * @param level
      * @return
      */
@@ -622,7 +629,7 @@ public class SANDGenerator {
 
     /**
      * Calculate the level color
-     * 
+     *
      * @param level
      * @return
      */
@@ -647,7 +654,7 @@ public class SANDGenerator {
 
     /**
      * Render the header row
-     * 
+     *
      * @param table
      */
     private static void renderHeaderRow(XWPFTable table) {
@@ -681,7 +688,7 @@ public class SANDGenerator {
 
     /**
      * Render the content row
-     * 
+     *
      * @param table
      * @param tableDataForTab
      */
@@ -706,7 +713,7 @@ public class SANDGenerator {
 
     /**
      * Set the font of the content cell
-     * 
+     *
      * @param cell
      */
     private static void setContentCellFont(XWPFTableCell cell) {
@@ -721,7 +728,7 @@ public class SANDGenerator {
 
     /**
      * Set the text of the content cell
-     * 
+     *
      * @param rowData
      * @param cellData
      * @param cellIndex
@@ -750,7 +757,7 @@ public class SANDGenerator {
 
     /**
      * Set the background color of the content cell
-     * 
+     *
      * @param rowData
      * @param cellData
      * @param level
@@ -771,7 +778,7 @@ public class SANDGenerator {
 
     /**
      * Generate the Word document
-     * 
+     *
      * @param document
      * @param tabbedData
      * @param tableName
@@ -780,7 +787,7 @@ public class SANDGenerator {
             String tableName) {
         try {
             if (tableName != null) { // Add check for tableName
-                document.createParagraph().createRun().setText(tableName); // Add table name as header
+                document.createParagraph().createRun().setText(tableName);
             }
 
             // Create tabs with separate tables for each tab name
