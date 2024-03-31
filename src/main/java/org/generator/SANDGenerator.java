@@ -4,9 +4,7 @@ import org.apache.commons.compress.utils.Sets;
 import org.apache.poi.xwpf.usermodel.*;
 import org.openxmlformats.schemas.wordprocessingml.x2006.main.STTblWidth;
 import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
+import org.w3c.dom.*;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -45,7 +43,7 @@ public class SANDGenerator {
     private static List<File> cfgFiles; // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
     static final Set<String> availableElementTags = Sets.newHashSet("container", "item", "inline");
-    static final Set<String> componentStartWithTag = Sets.newHashSet("system_tab", "common_tab");
+    static final Set<String> componentWrapWithTag = Sets.newHashSet("system_tab", "common_tab");
     static final Set<String> unAvailableXpaths = Sets.newHashSet("isReplicate");
 
     public static void main(String[] args) {
@@ -183,8 +181,17 @@ public class SANDGenerator {
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document document = builder.parse(file);
 
-            processTabNodes(document);
-            processInlineNodes(document);
+            NodeList tabNodes = document.getElementsByTagName("tab");
+            processTabNodes(tabNodes);
+
+            if (tabNodes.getLength() == 0){
+                Node root = document.getElementsByTagName("root-container").item(0);
+                NodeList rootChildren = root.getChildNodes();
+                processTabNodes(rootChildren);
+            }
+
+            NodeList inlineNodes = document.getElementsByTagName("inline");
+            processInlineTabNodes(inlineNodes);
 
         } catch (ParserConfigurationException | SAXException | IOException e) {
             e.printStackTrace();
@@ -193,44 +200,50 @@ public class SANDGenerator {
         return true;
     }
 
-    private static void processTabNodes(Document document) {
-        NodeList tabNodes = document.getElementsByTagName("tab");
+    private static void processTabNodes(NodeList tabNodes) {
         for (int i = 0; i < tabNodes.getLength(); i++) {
             Node tabNode = tabNodes.item(i);
-            Element tabElement = (Element) tabNode;
-            String tabName = tabElement.getAttribute("name");
 
-            // skip Traditional, Simplified Chinese
-            if (tabName.equals("Traditional Chinese") || tabName.equals("Simplified Chinese"))
-                continue;
+            NamedNodeMap tabNodeAttrs = tabNode.getAttributes();
+            if (tabNodeAttrs != null) {
+                Element tabElement = (Element) tabNode;
+                String tabName = tabElement.getAttribute("name");
 
-            // Initialize table data for the current tab
-            List<List<String>> tableDataForTab = new ArrayList<>();
-            tabbedData.put(tabName, tableDataForTab);
-            addRowTableData(tabElement, tableDataForTab, "", "");
+                // skip Traditional, Simplified Chinese
+                if (tabName.equals("Traditional Chinese") || tabName.equals("Simplified Chinese"))
+                    continue;
+
+                // Initialize table data for the current tab
+                List<List<String>> tableDataForTab = new ArrayList<>();
+                tabbedData.put(tabName, tableDataForTab);
+                addRowTableData(tabElement, tableDataForTab, "", "");
+            }
+
         }
     }
 
-    private static void processInlineNodes(Document document) {
-        NodeList inlineNodes = document.getElementsByTagName("inline");
+    private static void processInlineTabNodes(NodeList inlineNodes) {
         for (int i = 0; i < inlineNodes.getLength(); i++) {
             Node inlineNode = inlineNodes.item(i);
-            Element inlineElement = (Element) inlineNode;
-            String inlineCommand = inlineElement.getAttribute("command");
+            NamedNodeMap inlineNodeAttrs = inlineNode.getAttributes();
+            if (inlineNodeAttrs != null) {
+                Element inlineElement = (Element) inlineNode;
+                String inlineCommand = inlineElement.getAttribute("command");
 
-            // if not including component file, skipped
-            if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
-                continue;
+                // if not including component file, skipped
+                if (!inlineCommand.contains("data_comps.ipl") && !inlineCommand.contains("/templatedata"))
+                    continue;
 
-            // if not the following component, skipped
-            String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
-            String componentName = componentFile.substring(0, componentFile.lastIndexOf("."));
-            if (!componentStartWithTag.contains(componentName)) {
-                continue;
+                // if not the following component, skipped
+                String componentFile = inlineCommand.substring(inlineCommand.lastIndexOf("/") + 1);
+                String componentName = componentFile.substring(0, componentFile.lastIndexOf("."));
+                if (!componentWrapWithTag.contains(componentName)) {
+                    continue;
+                }
+
+                String componentPath = componentFolder + componentFile;
+                collectRepresentativeElements(new File(componentPath));
             }
-
-            String componentPath = componentFolder + componentFile;
-            collectRepresentativeElements(new File(componentPath));
         }
     }
 
@@ -812,6 +825,13 @@ public class SANDGenerator {
             // Create tabs with separate tables for each tab name
             for (Map.Entry<String, List<List<String>>> tabEntry : tabbedData.entrySet()) {
                 // Create tab header
+                List<List<String>> tableDataForTab = tabEntry.getValue();
+                if (tableDataForTab.isEmpty())
+                    continue;
+
+                XWPFTable table = document.createTable();
+                table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO);
+
                 XWPFParagraph tabPara = document.createParagraph();
                 tabPara.setStyle("Heading3");
                 XWPFRun tabRun = tabPara.createRun();
@@ -819,11 +839,6 @@ public class SANDGenerator {
                         ? "English, Traditional Chinese & Simplify Chinese"
                         : tabEntry.getKey() + " Tab";
                 tabRun.setText(tabName);
-
-                // Use a temporary variable name to avoid conflict
-                List<List<String>> tableDataForTab = tabEntry.getValue();
-                XWPFTable table = document.createTable();
-                table.getCTTbl().getTblPr().addNewTblW().setType(STTblWidth.AUTO); // Set auto-sizing behavior
 
                 renderHeaderRow(table);
 
