@@ -33,6 +33,7 @@ import java.util.*;
 public class SANDGenerator {
 
     private static String mode = "";
+    private static String outputTemplateDoc = "";
     private static String templateFolder = "";
     private static String componentFolder = "";
     private static String outputFolder = "";
@@ -58,7 +59,7 @@ public class SANDGenerator {
 
         XWPFDocument document = null;
         try {
-            document = new XWPFDocument(new FileInputStream("template.docx"));
+            document = new XWPFDocument(new FileInputStream(outputTemplateDoc));
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
@@ -69,33 +70,38 @@ public class SANDGenerator {
         StringBuilder failFiles = new StringBuilder();
 
         while (index < cfgFiles.size()) {
-            // System.out.println("--- Start Handing : " + cfgFiles.get(index).getAbsolutePath());
+            // System.out.println("--- Start Handing : " +
+            // cfgFiles.get(index).getAbsolutePath());
             boolean collectSuccess = collectRepresentativeElements(cfgFiles.get(index));
-            // System.out.println("*** Extracted data for file: " + (collectSuccess ? "success" : "fail"));
+            // System.out.println("*** Extracted data for file: " + (collectSuccess ?
+            // "success" : "fail"));
             tableData.clear();
 
             String parentFolderName = cfgFiles.get(index).getParentFile().getName().toUpperCase();
             boolean generateSuccess = generateWordDocument(document, tabbedData, parentFolderName);
-            // System.out.println("*** Word document generated for file: " + (generateSuccess ? "success" : "fail"));
+            // System.out.println("*** Word document generated for file: " +
+            // (generateSuccess ? "success" : "fail"));
             tabbedData.clear();
 
             // System.out.println("--- End Handing ");
-            if(collectSuccess && generateSuccess){
+            if (collectSuccess && generateSuccess) {
                 successCnt++;
-                successFiles.append("   ").append(successCnt).append(" : ").append(cfgFiles.get(index).getAbsolutePath()).append("\n");
-            }
-            else{
+                successFiles.append("   ").append(successCnt).append(" : ")
+                        .append(cfgFiles.get(index).getAbsolutePath()).append("\n");
+            } else {
                 failCount++;
-                failFiles.append("   ").append(failCount).append(" : ").append(cfgFiles.get(index).getAbsolutePath()).append("\n");
+                failFiles.append("   ").append(failCount).append(" : ").append(cfgFiles.get(index).getAbsolutePath())
+                        .append("\n");
             }
             index++;
         }
         System.out.println("Success files: ");
-        System.out.println(successFiles.length() > 0 ? successFiles: "-- Not available -- ");
+        System.out.println(successFiles.length() > 0 ? successFiles : "-- Not available -- ");
         System.out.println("Fail files: ");
-        System.out.println(failFiles.length() > 0 ? failFiles: "-- Not available -- ");
+        System.out.println(failFiles.length() > 0 ? failFiles : "-- Not available -- ");
         System.out.println();
-        System.out.println("TOTAL cfg files count: '" + index + "'\n    Success count: '" + successCnt + "'\n    Fail count: '" + failCount+"'");
+        System.out.println("TOTAL cfg files count: '" + index + "'\n    Success count: '" + successCnt
+                + "'\n    Fail count: '" + failCount + "'");
         System.out.println("    outputFolder: " + outputFolder);
         System.out.println();
         System.out.println("[SANDGenerator] Program End ... ");
@@ -129,6 +135,7 @@ public class SANDGenerator {
         templateFolder = config.getProperty(mode + "template.folder");
         componentFolder = config.getProperty(mode + "template.component.folder");
         outputFolder = config.getProperty(mode + "output.folder");
+        outputTemplateDoc = config.getProperty(mode + "output.template.doc");
         fontSize = Integer.parseInt(config.getProperty("font.size"));
         fontFamily = config.getProperty("font.family");
 
@@ -808,7 +815,9 @@ public class SANDGenerator {
                 XWPFParagraph tabPara = document.createParagraph();
                 tabPara.setStyle("Heading3");
                 XWPFRun tabRun = tabPara.createRun();
-                String tabName = tabEntry.getKey().equalsIgnoreCase("English") ? "English, Traditional Chinese & Simplify Chinese" : tabEntry.getKey() + " Tab";
+                String tabName = tabEntry.getKey().equalsIgnoreCase("English")
+                        ? "English, Traditional Chinese & Simplify Chinese"
+                        : tabEntry.getKey() + " Tab";
                 tabRun.setText(tabName);
 
                 // Use a temporary variable name to avoid conflict
