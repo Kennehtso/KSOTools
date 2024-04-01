@@ -40,6 +40,7 @@ public class SANDGenerator {
     private static final String RGB_BLUE = "156, 194, 229";
     private static List<List<String>> tableData = new ArrayList<>(); // Existing table data
     private static Map<String, List<List<String>>> tabbedData = new HashMap<>(); // Tabbed data
+    private static Set<String> handledTemplate = new HashSet<>();
     private static List<File> cfgFiles; // Tabbed data
     static final String TIMESTAMP_FORMAT = "yyyyMMddHHmmss";
     static final Set<String> availableElementTags = Sets.newHashSet("container", "item", "inline");
@@ -76,6 +77,10 @@ public class SANDGenerator {
             tableData.clear();
 
             String parentFolderName = cfgFiles.get(index).getParentFile().getName().toUpperCase();
+            if (handledTemplate.contains(parentFolderName))
+                continue;
+            handledTemplate.add(parentFolderName);
+
             boolean generateSuccess = generateWordDocument(document, tabbedData, parentFolderName);
             // System.out.println("*** Word document generated for file: " +
             // (generateSuccess ? "success" : "fail"));
@@ -178,6 +183,9 @@ public class SANDGenerator {
     private static boolean collectRepresentativeElements(File file) {
         try {
             DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setValidating(false); // Prevents validation against a DTD
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-dtd-grammar", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             DocumentBuilder builder = factory.newDocumentBuilder();
             Document document = builder.parse(file);
 
